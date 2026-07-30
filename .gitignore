@@ -1,0 +1,15 @@
+# Local release planning and private reference material.
+/local-docs/
+/Ref. Plugin/
+
+# Build artifacts must be attached to GitHub Releases, not committed.
+/*.zip
+
+# Local and editor noise.
+/.idea/
+/.vscode/
+/.DS_Store
+/Thumbs.db
+*.log
+*.tmp
+*.bak
