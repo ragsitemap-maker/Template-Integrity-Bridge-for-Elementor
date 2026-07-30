@@ -1,0 +1,112 @@
+# Polylang Elementor Archive Bridge
+
+Polylang Elementor Archive Bridge 讓一個 Elementor Pro 彙整頁範本的分類法條件，可以套用到所有由 Polylang 明確連結的翻譯詞彙。當多個語言要共用同一套彙整頁設計、又不想為每個翻譯分類或標籤各存一條條件時，才需要這個外掛。
+
+這是獨立開發的相容性外掛，並非 Elementor 或 Polylang 的官方產品，也未獲其背書。
+
+## 解決的具體問題
+
+Elementor Pro Theme Builder 透過顯示條件選擇範本。分類法條件會指定特定詞彙，而 Polylang 會把各語言翻譯保存為不同 ID 的詞彙。這個外掛會在已儲存條件的詞彙，與目前詞彙、父詞彙或祖先詞彙屬於同一個 Polylang 翻譯群組時，將對應 ID 交回 Elementor，再由 Elementor 完成原生條件判斷。
+
+適合使用的情況：
+
+- 已啟用 Elementor Pro 與 Polylang。
+- 多個語言的分類法彙整頁要共用同一個範本設計。
+- 該分類法同時由 Elementor 條件與 Polylang 管理。
+- 各語言詞彙已在 Polylang 正確設定語言並互相連結。
+
+不適合使用的情況：
+
+- 每個語言需要不同的 Elementor 範本設計。
+- 條件是頁面、文章、作者、日期、搜尋結果或其他非分類法情境。
+- 詞彙尚未指定語言或尚未連結為翻譯。
+- 需要語言切換器、動態標籤、內容翻譯或範本複製功能。
+
+## 核心功能
+
+- 支援精確詞彙條件。
+- 支援直接子詞彙與任意後代詞彙條件。
+- 保留 Elementor 原生的 Include 與 Exclude 行為。
+- 支援分類、標籤，以及同時受兩個產品管理的公開自訂分類法。
+- 在單次 request 內快取候選詞彙與翻譯群組。
+- 提供預設關閉的 Conditions Cache Protection，處理特定 Theme Builder cache 重建症狀。
+- 不修改已儲存的 Elementor 條件，也不改動前台彙整頁查詢。
+
+## 運作方式
+
+假設 Elementor 條件儲存英文分類 ID `10`，而 Polylang 將它與繁中分類 ID `20` 連結。在繁中彙整頁上，外掛會辨識這個翻譯關係，並在 Elementor 評估條件時提供相關的目前詞彙 ID；最後的 Include／Exclude 判斷仍由 Elementor 執行。
+
+對直接子詞彙與任意後代詞彙條件，外掛會用同樣方式比對目前詞彙的父層或祖先鏈。
+
+## 安裝方式
+
+1. 從目標 GitHub Release 下載附加的 ZIP。
+2. 在 WordPress 前往「外掛 > 安裝外掛 > 上傳外掛」。
+3. 上傳 ZIP、安裝並啟用。
+4. 確認 Elementor Pro 與 Polylang 已啟用。
+
+若要手動安裝，請把 `polylang-elementor-archive-bridge` 目錄複製到 `wp-content/plugins/`。
+
+## 操作方式
+
+1. 在 Polylang 為分類法詞彙指定語言，並連結各語言翻譯。
+2. 建立或編輯一個 Elementor Pro 彙整頁範本。
+3. 使用主要語言的詞彙新增分類法顯示條件，例如：
+
+   ```text
+   Include > Categories > Product
+   ```
+
+4. 不要為同一翻譯群組的其他語言另加重複條件。
+5. 發布範本，並逐一測試各語言的分類法彙整頁。
+
+只有在儲存 Theme Builder 範本顯示條件後，其他範本從 Elementor conditions cache 消失或條件變得不完整時，才到「設定 > Archive Bridge」啟用 **Conditions Cache Protection**，然後重新儲存一次受影響的顯示條件。沒有此症狀時請保持關閉。
+
+## 限制與不會執行的功能
+
+- 必須有 Elementor Pro 與 Polylang；本外掛不取代任何一方。
+- 只有已連結的詞彙翻譯會匹配；缺少或無關的翻譯會維持原狀。
+- 同一詞彙翻譯群組若建立多個語言專用範本，除非條件互斥，否則可能重疊匹配。
+- 建議翻譯詞彙維持對應階層，但階層並不是翻譯匹配鍵。
+- 整合依賴 Elementor Pro 的 filter hooks；未來 Elementor 若變更 hook，可能需要更新本外掛。
+- Conditions Cache Protection 是依照所述症狀提供的選用 workaround，不代表上游已確認存在 bug。
+- 不會翻譯、建立、複製或同步 Elementor 範本。
+- 不會寫入 `_elementor_conditions` metadata。
+- 不會修改 WordPress 彙整頁查詢、詞彙內容、網址、slug 或語言關係。
+- 不會新增 widget、動態標籤或語言切換器。
+- 啟用時不會執行 migration 或自動修復。
+
+## 系統需求
+
+- WordPress 6.5 或以上
+- PHP 7.4 或以上
+- 具備 Theme Builder 的 Elementor Pro
+- Polylang
+
+## 官方資料
+
+- [Elementor：建立或修改彙整頁範本](https://elementor.com/help/archive-site-part/)
+- [Elementor 開發者文件：Theme Conditions](https://developers.elementor.com/docs/theme-conditions/)
+- [Polylang 開發者文件：Function reference](https://polylang.pro/documentation/support/developers/function-reference/)
+- [WordPress Plugin Handbook：外掛標頭規格](https://developer.wordpress.org/plugins/plugin-basics/header-requirements/)
+
+## 開發與驗證
+
+從 repository 根目錄執行獨立 smoke tests：
+
+```bash
+php tests/run.php
+```
+
+執行 PHP 語法檢查：
+
+```bash
+php -l polylang-elementor-archive-bridge/polylang-elementor-archive-bridge.php
+php -l tests/run.php
+```
+
+`tests/` 只保留在 source，不會放入 WordPress 安裝 ZIP。
+
+## 授權
+
+GPL-2.0-or-later。
