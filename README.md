@@ -30,6 +30,8 @@ It is not appropriate when:
 - Supports categories, tags, and public custom taxonomies handled by both products.
 - Caches term candidates and translation groups in memory for the current request.
 - Offers disabled-by-default Conditions Cache Protection for a specific Theme Builder cache-rebuild symptom.
+- Offers disabled-by-default Nested Loop Conditions Save Protection for the
+  `Edit Loop Template` → `Save & Back` document-switch race.
 - Does not modify saved Elementor conditions or frontend archive queries.
 
 ## How it works
@@ -60,7 +62,39 @@ For a manual installation, copy the `polylang-elementor-archive-bridge` director
 4. Do not add separate conditions for translations in the same term group.
 5. Publish the template and test each translated taxonomy archive.
 
-If saving a Theme Builder template's Display Conditions makes other templates disappear from, or become incomplete in, Elementor's conditions cache, open **Settings > Archive Bridge**, enable **Conditions Cache Protection**, and re-save the affected Display Conditions once. Leave this setting off when that symptom is absent.
+## Optional protections
+
+Both protections are disabled by default and have separate responsibilities.
+
+### Conditions Cache Protection
+
+Enable this when saving one Theme Builder Template causes Templates from other
+Polylang admin languages to disappear from Elementor's condition results. It
+makes Elementor include every language when rebuilding the global Theme Builder
+conditions cache.
+
+After enabling it, re-save any Theme Builder Display Conditions once to rebuild
+an already incomplete cache. Leave it disabled if this language-filtered cache
+symptom is absent.
+
+### Nested Loop Conditions Save Protection
+
+Enable this when all of the following happen:
+
+1. You open an outer Section, Page, or Archive Template in Elementor.
+2. From a Loop Grid inside it, you click **Edit Template**.
+3. You edit the Loop Item and click **Save & Back**.
+4. The outer Template's Display Conditions disappear.
+
+Elementor Loop Items do not support Theme Builder Display Conditions. During the
+nested document switch, however, an empty Loop Conditions request can remain in
+Elementor's delayed AJAX queue and later use the outer Template ID. This guard
+prevents that invalid request from entering the queue. It does not block the
+Loop Item content save or legitimate Display Conditions changes made on the
+outer Template.
+
+Conditions deleted before this protection was enabled cannot be inferred from
+an empty value. Recreate them once after enabling the setting.
 
 ## Limitations and non-features
 
@@ -70,6 +104,9 @@ If saving a Theme Builder template's Display Conditions makes other templates di
 - Matching term hierarchy is recommended but is not the key used for translation matching.
 - The integration depends on Elementor Pro filter hooks. A future Elementor change to those hooks may require a plugin update.
 - Conditions Cache Protection is an opt-in workaround based on the described symptom. It is not a claim of a confirmed upstream bug.
+- Nested Loop protection depends on Elementor's current `loop-item` document
+  type and `theme_builder_save_conditions` editor action names. Unknown future
+  APIs fail open.
 - The plugin does not translate, create, duplicate, or synchronize templates.
 - The plugin does not write `_elementor_conditions` metadata.
 - The plugin does not alter WordPress archive queries, term content, URLs, slugs, or language relationships.
@@ -96,6 +133,8 @@ Run the isolated smoke tests from the repository root:
 
 ```bash
 php tests/run.php
+node tests/nested-loop-conditions-save-protection.test.js
+node tests/plugin-contract.test.js
 ```
 
 Run PHP syntax checks:
@@ -106,6 +145,12 @@ php -l tests/run.php
 ```
 
 The `tests/` directory is source-only and is intentionally excluded from the installable ZIP.
+
+## Latest release
+
+Version `1.3.0` adds the optional Nested Loop Conditions Save Protection and
+keeps all existing archive translation and cache-protection behavior
+independent.
 
 ## License
 

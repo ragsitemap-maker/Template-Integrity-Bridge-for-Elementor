@@ -31,6 +31,7 @@ $test_state = array(
 	'registered_settings'   => array(),
 	'settings_sections'     => array(),
 	'settings_fields'       => array(),
+	'enqueued_scripts'      => array(),
 );
 
 class WP_Term {
@@ -118,6 +119,23 @@ function add_settings_field( $field_id, $title, $callback, $page, $section ) {
 	global $test_state;
 
 	$test_state['settings_fields'][ $field_id ] = compact( 'title', 'callback', 'page', 'section' );
+}
+
+function plugins_url( $path, $file ) {
+	unset( $file );
+
+	return 'https://example.test/plugins/polylang-elementor-archive-bridge/' . ltrim( $path, '/' );
+}
+
+function wp_enqueue_script( $handle, $src, $dependencies, $version, $in_footer ) {
+	global $test_state;
+
+	$test_state['enqueued_scripts'][ $handle ] = compact(
+		'src',
+		'dependencies',
+		'version',
+		'in_footer'
+	);
 }
 
 function absint( $value ) {
@@ -243,6 +261,16 @@ assert_same(
 	is_filter_registered( 'elementor/theme/conditions/cache/regenerate/query_args' ),
 	'cache-protection filter is not registered by default'
 );
+assert_same(
+	false,
+	Plugin::is_nested_loop_conditions_protection_enabled(),
+	'missing nested-loop option defaults to disabled'
+);
+assert_same(
+	false,
+	is_action_registered( 'elementor/editor/after_enqueue_scripts' ),
+	'nested-loop editor hook is not registered by default'
+);
 
 $test_state['options'][ Plugin::OPTION_CACHE_PROTECTION ] = 'invalid';
 assert_same(
@@ -306,6 +334,46 @@ assert_same(
 assert_same( 0, Plugin::sanitize_cache_protection_option( 0 ), 'unchecked setting sanitizes to zero' );
 assert_same( 0, Plugin::sanitize_cache_protection_option( 'invalid' ), 'malformed setting sanitizes to zero' );
 assert_same( 1, Plugin::sanitize_cache_protection_option( '1' ), 'checked setting sanitizes to one' );
+assert_same( 0, Plugin::sanitize_nested_loop_protection_option( 0 ), 'unchecked nested-loop setting sanitizes to zero' );
+assert_same( 0, Plugin::sanitize_nested_loop_protection_option( 'invalid' ), 'malformed nested-loop setting sanitizes to zero' );
+assert_same( 1, Plugin::sanitize_nested_loop_protection_option( '1' ), 'checked nested-loop setting sanitizes to one' );
+
+$test_state['options'][ Plugin::OPTION_NESTED_LOOP_PROTECTION ] = 'invalid';
+assert_same(
+	false,
+	Plugin::is_nested_loop_conditions_protection_enabled(),
+	'malformed nested-loop option remains disabled'
+);
+
+$test_state['options'][ Plugin::OPTION_NESTED_LOOP_PROTECTION ] = '1';
+Plugin::boot();
+assert_same(
+	true,
+	Plugin::is_nested_loop_conditions_protection_enabled(),
+	'checked nested-loop option is enabled'
+);
+assert_same(
+	true,
+	is_action_registered( 'elementor/editor/after_enqueue_scripts' ),
+	'enabled nested-loop protection registers the Elementor editor hook'
+);
+
+Plugin::enqueue_nested_loop_conditions_protection_script();
+assert_same(
+	array( 'jquery', 'elementor-pro' ),
+	$test_state['enqueued_scripts'][ Plugin::NESTED_LOOP_SCRIPT_HANDLE ]['dependencies'],
+	'nested-loop guard loads after jQuery and Elementor Pro'
+);
+assert_same(
+	Plugin::VERSION,
+	$test_state['enqueued_scripts'][ Plugin::NESTED_LOOP_SCRIPT_HANDLE ]['version'],
+	'nested-loop guard uses the plugin version'
+);
+assert_same(
+	true,
+	$test_state['enqueued_scripts'][ Plugin::NESTED_LOOP_SCRIPT_HANDLE ]['in_footer'],
+	'nested-loop guard loads in the editor footer'
+);
 
 $test_state['is_admin'] = true;
 Plugin::boot();
@@ -329,6 +397,11 @@ assert_same(
 	'registered cache-protection setting defaults to zero'
 );
 assert_same(
+	0,
+	$test_state['registered_settings'][ Plugin::OPTION_NESTED_LOOP_PROTECTION ]['args']['default'],
+	'registered nested-loop setting defaults to zero'
+);
+assert_same(
 	true,
 	isset( $test_state['settings_sections'][ Plugin::SETTINGS_SECTION ] ),
 	'cache-protection settings section is registered'
@@ -337,6 +410,16 @@ assert_same(
 	true,
 	isset( $test_state['settings_fields'][ Plugin::OPTION_CACHE_PROTECTION ] ),
 	'cache-protection checkbox field is registered'
+);
+assert_same(
+	true,
+	isset( $test_state['settings_sections'][ Plugin::SETTINGS_SECTION_NESTED_LOOP ] ),
+	'nested-loop settings section is registered'
+);
+assert_same(
+	true,
+	isset( $test_state['settings_fields'][ Plugin::OPTION_NESTED_LOOP_PROTECTION ] ),
+	'nested-loop checkbox field is registered'
 );
 
 $category_condition = array(
