@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Polylang Elementor Archive Bridge
  * Description: Lets one Elementor Pro archive template condition match every Polylang translation of the selected taxonomy term.
- * Version: 1.2.2
+ * Version: 1.3.0
  * Author: ragsitemap-maker
  * License: GPL-2.0-or-later
  * License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -28,15 +28,18 @@ defined( 'ABSPATH' ) || exit;
  */
 final class Plugin {
 
-	const VERSION           = '1.2.2';
+	const VERSION           = '1.3.0';
 	const MODE_EXACT        = 'exact';
 	const MODE_DIRECT_CHILD = 'direct_child';
 	const MODE_ANY_CHILD    = 'any_child';
 
-	const OPTION_CACHE_PROTECTION = 'peab_protect_conditions_cache';
-	const SETTINGS_GROUP          = 'peab_settings';
-	const SETTINGS_PAGE           = 'polylang-elementor-archive-bridge';
-	const SETTINGS_SECTION        = 'peab_conditions_cache';
+	const OPTION_CACHE_PROTECTION       = 'peab_protect_conditions_cache';
+	const OPTION_NESTED_LOOP_PROTECTION = 'peab_protect_nested_loop_conditions';
+	const SETTINGS_GROUP                = 'peab_settings';
+	const SETTINGS_PAGE                 = 'polylang-elementor-archive-bridge';
+	const SETTINGS_SECTION              = 'peab_conditions_cache';
+	const SETTINGS_SECTION_NESTED_LOOP  = 'peab_nested_loop_conditions';
+	const NESTED_LOOP_SCRIPT_HANDLE     = 'peab-nested-loop-conditions-save-protection';
 
 	/**
 	 * Candidate term sets cached for the duration of the request.
@@ -75,6 +78,14 @@ final class Plugin {
 			);
 		}
 
+		if ( self::is_nested_loop_conditions_protection_enabled() ) {
+			add_action(
+				'elementor/editor/after_enqueue_scripts',
+				array( __CLASS__, 'enqueue_nested_loop_conditions_protection_script' ),
+				100
+			);
+		}
+
 		if ( is_admin() ) {
 			add_action( 'admin_init', array( __CLASS__, 'register_settings' ) );
 			add_action( 'admin_menu', array( __CLASS__, 'register_settings_page' ) );
@@ -96,6 +107,37 @@ final class Plugin {
 		$value = get_option( self::OPTION_CACHE_PROTECTION, 0 );
 
 		return 1 === $value || '1' === $value;
+	}
+
+	/**
+	 * Determine whether nested Loop conditions-save protection is enabled.
+	 *
+	 * Missing, malformed, or unchecked options are always treated as disabled.
+	 *
+	 * @return bool
+	 */
+	public static function is_nested_loop_conditions_protection_enabled() {
+		$value = get_option( self::OPTION_NESTED_LOOP_PROTECTION, 0 );
+
+		return 1 === $value || '1' === $value;
+	}
+
+	/**
+	 * Load the guard only inside the Elementor editor.
+	 *
+	 * The Elementor Pro dependency ensures its AJAX facade exists before the
+	 * guard attempts to wrap addRequest().
+	 *
+	 * @return void
+	 */
+	public static function enqueue_nested_loop_conditions_protection_script() {
+		wp_enqueue_script(
+			self::NESTED_LOOP_SCRIPT_HANDLE,
+			plugins_url( 'assets/js/nested-loop-conditions-save-protection.js', __FILE__ ),
+			array( 'jquery', 'elementor-pro' ),
+			self::VERSION,
+			true
+		);
 	}
 
 	/**
@@ -136,6 +178,16 @@ final class Plugin {
 	}
 
 	/**
+	 * Normalize the nested Loop protection checkbox value.
+	 *
+	 * @param mixed $value Submitted option value.
+	 * @return int
+	 */
+	public static function sanitize_nested_loop_protection_option( $value ) {
+		return in_array( $value, array( 1, '1', true ), true ) ? 1 : 0;
+	}
+
+	/**
 	 * Register the optional feature setting.
 	 *
 	 * @return void
@@ -147,6 +199,17 @@ final class Plugin {
 			array(
 				'type'              => 'integer',
 				'sanitize_callback' => array( __CLASS__, 'sanitize_cache_protection_option' ),
+				'default'           => 0,
+				'show_in_rest'      => false,
+			)
+		);
+
+		register_setting(
+			self::SETTINGS_GROUP,
+			self::OPTION_NESTED_LOOP_PROTECTION,
+			array(
+				'type'              => 'integer',
+				'sanitize_callback' => array( __CLASS__, 'sanitize_nested_loop_protection_option' ),
 				'default'           => 0,
 				'show_in_rest'      => false,
 			)
@@ -165,6 +228,21 @@ final class Plugin {
 			array( __CLASS__, 'render_cache_protection_field' ),
 			self::SETTINGS_PAGE,
 			self::SETTINGS_SECTION
+		);
+
+		add_settings_section(
+			self::SETTINGS_SECTION_NESTED_LOOP,
+			esc_html__( 'Nested Loop Conditions Save Protection', 'polylang-elementor-archive-bridge' ),
+			array( __CLASS__, 'render_nested_loop_protection_section' ),
+			self::SETTINGS_PAGE
+		);
+
+		add_settings_field(
+			self::OPTION_NESTED_LOOP_PROTECTION,
+			esc_html__( 'Nested Loop save protection', 'polylang-elementor-archive-bridge' ),
+			array( __CLASS__, 'render_nested_loop_protection_field' ),
+			self::SETTINGS_PAGE,
+			self::SETTINGS_SECTION_NESTED_LOOP
 		);
 	}
 
@@ -213,7 +291,7 @@ final class Plugin {
 	 */
 	public static function render_cache_protection_section() {
 		echo '<p>' . esc_html__(
-			'Enable this if saving the Display Conditions of one Elementor Theme Builder template causes other templates\' conditions to disappear or become incomplete on a Polylang site. This does not change frontend archive queries or translate templates.',
+			'Use this for Polylang language-filtered cache rebuilds: saving one Theme Builder Template makes Templates from other admin languages disappear from Elementor\'s condition results. If the problem happens specifically after Edit Loop Template and Save & Back, use Nested Loop Conditions Save Protection below.',
 			'polylang-elementor-archive-bridge'
 		) . '</p>';
 	}
@@ -250,6 +328,57 @@ final class Plugin {
 			<?php
 			echo esc_html__(
 				'When enabled, Elementor includes templates from every language instead of only the current admin language. After enabling it, re-save any Theme Builder Display Conditions once to rebuild the cache. Leave disabled if you have never seen this issue.',
+				'polylang-elementor-archive-bridge'
+			);
+			?>
+		</p>
+		<?php
+	}
+
+	/**
+	 * Explain the nested Loop editor race and the feature boundary.
+	 *
+	 * @return void
+	 */
+	public static function render_nested_loop_protection_section() {
+		echo '<p>' . esc_html__(
+			'Enable this if editing a Loop Item through a Loop Grid inside another Elementor Template causes the outer Template\'s Display Conditions to disappear after Save & Back. This protection does not block Loop content saves.',
+			'polylang-elementor-archive-bridge'
+		) . '</p>';
+	}
+
+	/**
+	 * Render the disabled-by-default nested Loop protection checkbox.
+	 *
+	 * @return void
+	 */
+	public static function render_nested_loop_protection_field() {
+		$enabled = self::is_nested_loop_conditions_protection_enabled();
+		?>
+		<input
+			type="hidden"
+			name="<?php echo esc_attr( self::OPTION_NESTED_LOOP_PROTECTION ); ?>"
+			value="0"
+		/>
+		<label for="<?php echo esc_attr( self::OPTION_NESTED_LOOP_PROTECTION ); ?>">
+			<input
+				type="checkbox"
+				id="<?php echo esc_attr( self::OPTION_NESTED_LOOP_PROTECTION ); ?>"
+				name="<?php echo esc_attr( self::OPTION_NESTED_LOOP_PROTECTION ); ?>"
+				value="1"
+				<?php checked( $enabled ); ?>
+			/>
+			<?php
+			echo esc_html__(
+				'Prevent Loop Item saves from queueing an empty Theme Builder Conditions request.',
+				'polylang-elementor-archive-bridge'
+			);
+			?>
+		</label>
+		<p class="description">
+			<?php
+			echo esc_html__(
+				'Disabled by default. The guard runs only in the Elementor editor and only while the current document is a Loop Item. Conditions already deleted before enabling this setting must be recreated once.',
 				'polylang-elementor-archive-bridge'
 			);
 			?>

@@ -3,7 +3,7 @@ Contributors: site-development-team
 Tags: elementor, polylang, archive, theme builder, display conditions
 Requires at least: 6.5
 Requires PHP: 7.4
-Stable tag: 1.2.2
+Stable tag: 1.3.0
 License: GPL-2.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -35,6 +35,11 @@ An optional, disabled-by-default Conditions Cache Protection setting adds
 query. Use this workaround only for the documented incomplete-cache symptom; it
 is not a claim of a confirmed upstream bug.
 
+An independent, disabled-by-default Nested Loop Conditions Save Protection
+setting prevents a Loop Item opened through a Loop Grid inside another Template
+from queueing an empty Theme Builder Conditions request during Save & Back. It
+does not block the Loop Item content save.
+
 == Installation ==
 
 1. Upload the `polylang-elementor-archive-bridge` folder to
@@ -46,6 +51,9 @@ is not a claim of a confirmed upstream bug.
 6. Optional: open Settings > Archive Bridge and enable Conditions Cache
    Protection if saving one Theme Builder template causes other templates to
    disappear from Elementor's conditions cache.
+7. Optional: enable Nested Loop Conditions Save Protection if editing a Loop
+   Item from inside another Template causes the outer Template's Display
+   Conditions to disappear after Save & Back.
 
 Example:
 
@@ -67,6 +75,7 @@ Supported:
 * Include and Exclude conditions
 * One unchanged Elementor Template ID across languages
 * Optional all-language Elementor conditions cache regeneration
+* Optional nested Loop Item conditions-save race protection
 
 Not included:
 
@@ -83,6 +92,8 @@ Limitations:
 * Only terms explicitly linked by Polylang can match.
 * Separate templates for the same translation group can overlap.
 * The bridge depends on Elementor Pro filter hooks that may change in a future release.
+* Nested Loop protection depends on Elementor's current `loop-item` document type
+  and `theme_builder_save_conditions` editor action names.
 
 == Frequently Asked Questions ==
 
@@ -115,7 +126,21 @@ Bridge only if saving one Theme Builder template's Display Conditions causes
 other templates' conditions to disappear or become incomplete. After enabling
 it, re-save any Theme Builder Display Conditions once to rebuild the cache.
 
+= Is Nested Loop Conditions Save Protection enabled automatically? =
+
+No. It is disabled by default. Enable it only if Edit Loop Template followed by
+Save & Back causes the outer Template's Display Conditions to disappear. The
+guard runs only in the Elementor editor and does not block Loop content saves.
+Conditions already deleted before enabling it must be recreated once.
+
 == Changelog ==
+
+= 1.3.0 =
+
+* Add disabled-by-default Nested Loop Conditions Save Protection.
+* Prevent Loop Items from queueing an invalid empty Theme Builder Conditions request.
+* Keep Loop content saves and legitimate outer Template Conditions saves unchanged.
+* Separate nested editor race protection from Polylang cache rebuild protection.
 
 = 1.2.2 =
 

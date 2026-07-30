@@ -30,6 +30,8 @@ Elementor Pro Theme Builder 透過顯示條件選擇範本。分類法條件會�
 - 支援分類、標籤，以及同時受兩個產品管理的公開自訂分類法。
 - 在單次 request 內快取候選詞彙與翻譯群組。
 - 提供預設關閉的 Conditions Cache Protection，處理特定 Theme Builder cache 重建症狀。
+- 提供預設關閉的 Nested Loop Conditions Save Protection，處理
+  `Edit Loop Template` → `Save & Back` 的文件切換競態。
 - 不修改已儲存的 Elementor 條件，也不改動前台彙整頁查詢。
 
 ## 運作方式
@@ -60,7 +62,34 @@ Elementor Pro Theme Builder 透過顯示條件選擇範本。分類法條件會�
 4. 不要為同一翻譯群組的其他語言另加重複條件。
 5. 發布範本，並逐一測試各語言的分類法彙整頁。
 
-只有在儲存 Theme Builder 範本顯示條件後，其他範本從 Elementor conditions cache 消失或條件變得不完整時，才到「設定 > Archive Bridge」啟用 **Conditions Cache Protection**，然後重新儲存一次受影響的顯示條件。沒有此症狀時請保持關閉。
+## 選用防護功能
+
+兩項防護預設都關閉，而且負責不同問題。
+
+### Conditions Cache Protection
+
+儲存一個 Theme Builder Template 後，如果其他 Polylang 後台語言的 Templates
+從 Elementor condition 結果消失，才啟用此功能。它會讓 Elementor 重建全站
+Theme Builder Conditions cache 時載入所有語言。
+
+若 cache 已經不完整，啟用後需重新儲存任一 Theme Builder Display Conditions
+一次。沒有語言過濾造成的 cache 症狀時請保持關閉。
+
+### Nested Loop Conditions Save Protection
+
+只有符合以下完整流程時才啟用：
+
+1. 在 Elementor 開啟外層 Section、Page 或 Archive Template。
+2. 從其中的 Loop Grid 點擊 **Edit Template**。
+3. 編輯 Loop Item 後點擊 **Save & Back**。
+4. 回到外層 Template 後，原有 Display Conditions 消失。
+
+Loop Item 本身不支援 Theme Builder Display Conditions，但巢狀文件切換時，
+空的 Loop Conditions request 可能留在 Elementor 的延遲 AJAX queue，之後
+誤用外層 Template ID。此功能會阻止該無效 request 進入 queue，不會阻止
+Loop Item 內容儲存，也不會攔截外層 Template 合法的 Conditions 變更。
+
+啟用前已經刪除的 Conditions 無法從空值推測還原，必須重新建立一次。
 
 ## 限制與不會執行的功能
 
@@ -70,6 +99,9 @@ Elementor Pro Theme Builder 透過顯示條件選擇範本。分類法條件會�
 - 建議翻譯詞彙維持對應階層，但階層並不是翻譯匹配鍵。
 - 整合依賴 Elementor Pro 的 filter hooks；未來 Elementor 若變更 hook，可能需要更新本外掛。
 - Conditions Cache Protection 是依照所述症狀提供的選用 workaround，不代表上游已確認存在 bug。
+- Nested Loop 防護依賴 Elementor 目前的 `loop-item` document type 與
+  `theme_builder_save_conditions` editor action 名稱；遇到未知未來 API 時會
+  fail-open。
 - 不會翻譯、建立、複製或同步 Elementor 範本。
 - 不會寫入 `_elementor_conditions` metadata。
 - 不會修改 WordPress 彙整頁查詢、詞彙內容、網址、slug 或語言關係。
@@ -96,6 +128,8 @@ Elementor Pro Theme Builder 透過顯示條件選擇範本。分類法條件會�
 
 ```bash
 php tests/run.php
+node tests/nested-loop-conditions-save-protection.test.js
+node tests/plugin-contract.test.js
 ```
 
 執行 PHP 語法檢查：
@@ -106,6 +140,11 @@ php -l tests/run.php
 ```
 
 `tests/` 只保留在 source，不會放入 WordPress 安裝 ZIP。
+
+## 最新版本
+
+`1.3.0` 新增選用的 Nested Loop Conditions Save Protection；既有的分類翻譯
+映射與 Conditions Cache Protection 仍各自獨立運作。
 
 ## 授權
 
