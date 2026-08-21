@@ -1,8 +1,8 @@
 <?php
 /**
- * Plugin Name: Polylang Elementor Archive Bridge
- * Description: Lets one Elementor Pro archive template condition match every Polylang translation of the selected taxonomy term.
- * Version: 1.4.4
+ * Plugin Name: Template Integrity Bridge for Elementor
+ * Description: Protects Elementor template selection, render context, condition cache, and nested editor state, including Polylang-aware taxonomy matching.
+ * Version: 1.5.0
  * Author: ragsitemap-maker
  * License: GPL-2.0-or-later
  * License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -28,7 +28,7 @@ defined( 'ABSPATH' ) || exit;
  */
 final class Plugin {
 
-	const VERSION           = '1.4.4';
+	const VERSION           = '1.5.0';
 	const MODE_EXACT        = 'exact';
 	const MODE_DIRECT_CHILD = 'direct_child';
 	const MODE_ANY_CHILD    = 'any_child';
@@ -574,8 +574,8 @@ final class Plugin {
 	 */
 	public static function register_settings_page() {
 		add_options_page(
-			esc_html__( 'Polylang Elementor Archive Bridge', 'polylang-elementor-archive-bridge' ),
-			esc_html__( 'Archive Bridge', 'polylang-elementor-archive-bridge' ),
+			esc_html__( 'Template Integrity Bridge for Elementor', 'polylang-elementor-archive-bridge' ),
+			esc_html__( 'Template Integrity', 'polylang-elementor-archive-bridge' ),
 			'manage_options',
 			self::SETTINGS_PAGE,
 			array( __CLASS__, 'render_settings_page' )

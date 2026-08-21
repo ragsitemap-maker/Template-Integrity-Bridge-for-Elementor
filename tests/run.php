@@ -31,6 +31,7 @@ $test_state = array(
 	'registered_settings'   => array(),
 	'settings_sections'     => array(),
 	'settings_fields'       => array(),
+	'options_pages'         => array(),
 	'enqueued_scripts'      => array(),
 	'archive_type'          => '',
 	'current_post_id'        => 0,
@@ -298,6 +299,18 @@ function add_settings_field( $field_id, $title, $callback, $page, $section ) {
 	global $test_state;
 
 	$test_state['settings_fields'][ $field_id ] = compact( 'title', 'callback', 'page', 'section' );
+}
+
+function add_options_page( $page_title, $menu_title, $capability, $menu_slug, $callback ) {
+	global $test_state;
+
+	$test_state['options_pages'][] = compact(
+		'page_title',
+		'menu_title',
+		'capability',
+		'menu_slug',
+		'callback'
+	);
 }
 
 function plugins_url( $path, $file ) {
@@ -647,6 +660,15 @@ assert_same(
 	registered_callback_count( $test_state['actions'], 'admin_init' ),
 	'repeated bootstrap does not duplicate the settings hook'
 );
+
+Plugin::register_settings_page();
+assert_same( 1, count( $test_state['options_pages'] ), 'settings page is registered once' );
+$options_page = $test_state['options_pages'][0];
+assert_same( 'Template Integrity Bridge for Elementor', $options_page['page_title'], 'settings page uses the full public name' );
+assert_same( 'Template Integrity', $options_page['menu_title'], 'settings menu uses the short admin name' );
+assert_same( 'manage_options', $options_page['capability'], 'settings page capability remains unchanged' );
+assert_same( Plugin::SETTINGS_PAGE, $options_page['menu_slug'], 'settings page slug remains the technical identity' );
+assert_same( array( Plugin::class, 'render_settings_page' ), $options_page['callback'], 'settings page callback remains unchanged' );
 
 Plugin::register_settings();
 assert_same(

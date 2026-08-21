@@ -1,27 +1,31 @@
-# Polylang Elementor Archive Bridge
+# Template Integrity Bridge for Elementor
 
-Polylang Elementor Archive Bridge 是針對 Elementor Pro、Polylang 與 taxonomy Archive 的小範圍相容性外掛。它讓多語分類頁共用同一套 Archive 設計，並分別處理三種 Elementor 工作流程問題。
+Template Integrity Bridge for Elementor 是針對 Elementor Template 完整性的精確相容性外掛。
 
-這是獨立開發的外掛，並非 Elementor 或 Polylang 的官方產品，也未獲其背書。
+保護 Elementor Template 的選擇、渲染資料 context、Conditions cache 與巢狀編輯狀態，並支援 Polylang taxonomy matching。
 
-## 先確認你遇到哪一種問題
+原名 Polylang Elementor Archive Bridge。
 
-| 問題 | 對應功能 | 預設狀態 |
-| --- | --- | --- |
-| 一條 Elementor taxonomy Display Condition 無法套用到 Polylang 已連結的翻譯詞彙 | Polylang taxonomy condition mapping | 固定啟用 |
-| Archive 的 Template widget 直接嵌入 Loop Item Template，裡面的 ACF 讀到目前文章或欄位預設值，而不是 Archive term | Archive ACF term correction | 開啟 |
-| 儲存 Theme Builder Conditions 後，其他 Polylang 後台語言的 Templates 從 Elementor condition 結果消失 | Conditions Cache Protection | 關閉 |
-| `Edit Loop Template` → `Save & Back` 後，外層 Template 的 Display Conditions 消失 | Nested Loop Conditions Save Protection | 關閉 |
+Template Integrity Bridge 是獨立開發的外掛，並非 Elementor 或 Polylang 的官方產品，也未獲其背書。
 
-這四列是不同問題。啟用其中一項防護，不會連動或改寫其他功能。
+## 外掛保護的三個完整性層級
 
-## 1. 讓 Polylang 翻譯詞彙共用一個 Archive Condition
+| 完整性層級 | 功能 | 預設狀態 | 依賴 |
+| --- | --- | --- | --- |
+| Template Selection Integrity | Polylang taxonomy condition mapping | 固定啟用 | Elementor Pro 與 Polylang |
+| Template Selection Integrity | Conditions Cache Protection | 關閉 | Elementor Pro 與 Polylang |
+| Template Render Context Integrity | Archive ACF term correction | 開啟 | Elementor Pro 與 ACF |
+| Template Editor State Integrity | Nested Loop Conditions Save Protection | 關閉 | Elementor Pro |
 
-這是外掛的核心功能，沒有開關。
+四項功能處理不同問題。啟用其中一項設定，不會連動或改寫其他功能。
 
-Elementor 會用一個 term ID 儲存 taxonomy Display Condition；Polylang 則把每個語言的翻譯保存成不同 term ID。Elementor 評估 Archive request 時，外掛會確認已儲存的詞彙，是否與目前詞彙、父詞彙或祖先詞彙屬於同一個 Polylang 翻譯群組。符合時只提供對應 ID，最後的 Include／Exclude 判斷仍由 Elementor 執行。
+## Template Selection Integrity
 
-支援範圍：
+### Polylang taxonomy condition mapping
+
+Elementor 會用一個 term ID 儲存 taxonomy Display Condition；Polylang 則把每個語言的翻譯保存成不同 term ID。Elementor 評估 Archive request 時，外掛會確認已儲存的詞彙是否與目前詞彙、父詞彙或祖先詞彙屬於同一個 Polylang 翻譯群組。符合時只提供對應 ID，最後的 Include／Exclude 判斷仍由 Elementor 執行。
+
+這項固定啟用的 mapping 支援：
 
 - 精確 taxonomy term。
 - Direct Child。
@@ -29,11 +33,19 @@ Elementor 會用一個 term ID 儲存 taxonomy Display Condition；Polylang 則�
 - Include 與 Exclude。
 - 分類、標籤，以及同時受 Elementor 與 Polylang 管理的公開自訂 taxonomy。
 
-外掛不會複製 Display Conditions、不會修改 `_elementor_conditions`，也不會改動前台 query。
+翻譯群組與祖先候選只在目前 request 內快取。外掛不會複製 Display Conditions、不會修改 `_elementor_conditions`，也不會改動前台 query。
 
-## 2. Template widget 直接嵌入 Loop Item Template 時的 ACF
+### Conditions Cache Protection
 
-這項修正只處理一個精確結構：
+只有在儲存一個 Theme Builder Template 後，其他 Polylang 後台語言的 Templates 從 Elementor condition 結果消失時才啟用。它只會在 Elementor 專用的 Conditions cache rebuild query 加入 `lang=''`。
+
+本防護預設關閉。若 cache 已經不完整，啟用後需重新儲存一次 Theme Builder Display Condition。沒有這項症狀時保持關閉。
+
+## Template Render Context Integrity
+
+### Archive ACF term correction
+
+這項預設開啟的修正只處理一個精確結構：
 
 ```text
 Theme Builder taxonomy Archive
@@ -44,7 +56,7 @@ Theme Builder taxonomy Archive
 
 在這個結構中，雖然當下沒有執行文章 Loop 疊代，Elementor 仍可能把載入中的文件判定為 `loop-item`。它的 ACF provider 因而使用 `get_the_ID()`，導致 ACF 查詢目前文章，而不是 queried Archive term，最後可能顯示欄位的預設值。
 
-**Archive ACF term correction** 開啟時，外掛只會在已由實際執行紀錄確認的全部條件同時成立時介入，其中包括：上游尚未回傳值，而且 Template widget 選取的 Template ID 必須完全等於目前 Loop Item document ID。符合時才把 ACF object identity 改成 queried taxonomy term 的 `term_{ID}`。
+外掛只會在已由實際執行紀錄確認的全部條件同時成立時介入。上游必須尚未回傳值，而且 Template widget 選取的 Template ID 必須完全等於目前 Loop Item document ID。符合時才把 ACF object identity 改成 queried taxonomy term 的 `term_{ID}`。
 
 這項修正不處理：
 
@@ -55,25 +67,15 @@ Theme Builder taxonomy Archive
 - 非 taxonomy Archive 或非 Template widget。
 - 把 WordPress Page 的 ACF 值映射到 taxonomy term。
 
-ACF 值必須儲存在 taxonomy term。本功能只修正該次 ACF 查詢使用的 object identity，不會修改欄位、預設值、Template 或 query。
+ACF 值必須儲存在 taxonomy term。本功能只修正該次 ACF 查詢使用的 object identity，不會修改欄位、預設值、Template、query 或已儲存資料。
 
-### 未來 Elementor Pro 修正後會怎樣？
+### 未來 Elementor Pro 修正後的行為
 
-本功能不使用 Elementor 版本清單，而是檢查當下的 runtime 輸入。
+本功能不使用 Elementor 版本清單，而是檢查當下的 runtime 輸入。如果 Elementor Pro 或 ACF 已回傳非 `null` 的正確值、不再使用目前文章 ID、改變 document type、不再提供預期 API，或 Template ID 與 document ID 不再完全相同，外掛會原樣保留上游結果。
 
-如果 Elementor Pro 或 ACF 已回傳非 `null` 的正確值、不再使用目前文章 ID、改變 document type、不再提供預期的 document API，或 Template ID 與 document ID 不再完全相同，外掛會原樣保留上游結果。遇到異常 API 型別或例外時也會靜默放行，不輸出 warning、notice、log，也不會自動改寫設定。
+遇到異常 API 型別或例外時也會靜默放行，不輸出 warning、notice、log，也不會自動改寫設定。Checkbox 可以維持勾選；只要精確錯誤形狀已不存在，修正分支就會成為 silent no-op。
 
-因此 checkbox 可以維持勾選；只要精確的錯誤形狀已不存在，修正分支就會自然成為 silent no-op，不會與未來的 Elementor 修正衝突。
-
-## 3. 兩項選用防護
-
-以下兩項防護互相獨立，而且預設關閉。
-
-### Conditions Cache Protection
-
-只有在儲存一個 Theme Builder Template 後，其他 Polylang 後台語言的 Templates 從 Elementor condition 結果消失時才啟用。它只會在 Elementor 專用的 Conditions cache rebuild query 加入 `lang=''`。
-
-若 cache 已經不完整，啟用後需重新儲存一次 Theme Builder Display Condition。沒有這項症狀時保持關閉。
+## Template Editor State Integrity
 
 ### Nested Loop Conditions Save Protection
 
@@ -84,17 +86,23 @@ ACF 值必須儲存在 taxonomy term。本功能只修正該次 ACF 查詢使用
 3. 編輯 Loop Item 後選擇 **Save & Back**。
 4. 外層 Template 的 Display Conditions 消失。
 
-此防護會阻止無效的空白 Loop Conditions request 進入 Elementor 延遲 AJAX queue，不會阻止 Loop Item 內容儲存，也不會攔截外層 Template 的合法 Conditions 變更。啟用前已刪除的 Conditions 必須重建一次。
+本防護預設關閉。它會阻止無效的空白 Loop Conditions request 進入 Elementor 延遲 AJAX queue，不會阻止 Loop Item 內容儲存，也不會攔截外層 Template 的合法 Conditions 變更。啟用前已刪除的 Conditions 必須重建一次。
+
+本防護依賴 Elementor 目前的 editor action 名稱，遇到未知未來 API 時會 fail-open。
 
 ## 安裝與設定
 
 1. 在「外掛 > 安裝外掛 > 上傳外掛」上傳 release ZIP，安裝並啟用。
-2. 確認 Elementor Pro 與 Polylang 已啟用。
-3. 前往「設定 > Archive Bridge」。
-4. 使用前述 `Archive → Template widget → Loop Item Template` 精確結構時，維持 **Archive ACF term correction** 開啟；未使用該結構或需要停止修正時可取消勾選。
-5. 另外兩項 protection 只有在對應症狀存在時才啟用。
+2. 確認 Elementor Pro，以及各功能需要的依賴已啟用。
+3. 前往「設定 > Template Integrity」。
+4. 只有使用前述 Archive → Template widget → Loop Item 精確結構時，才維持 **Archive ACF term correction** 開啟。
+5. 另外兩項預設關閉的 protection 只有在對應症狀存在時才啟用。
 
 手動安裝時，將 `polylang-elementor-archive-bridge` 目錄複製到 `wp-content/plugins/`。
+
+## 升級身份
+
+1.5.0 的外部安裝包名稱是 `template-integrity-bridge-for-elementor-1.5.0.zip`，但 ZIP 內刻意保留 `polylang-elementor-archive-bridge/` 資料夾與原本的主 PHP 檔名。Settings slug 與既有 option keys 也保持不變。WordPress 因此會取代同一個外掛，而不是建立第二個外掛；既有設定不需要 migration 即可保留。
 
 ## 建立一個共用的 Archive Condition
 
@@ -106,28 +114,34 @@ ACF 值必須儲存在 taxonomy term。本功能只修正該次 ACF 查詢使用
    Include > Categories > Product
    ```
 
-4. 不要為同一個翻譯群組的其他語言加入重複條件。
+4. 不要為同一翻譯群組的其他語言加入重複條件。
 5. 發布後逐一測試每個語言的 taxonomy Archive。
 
 只有在不同語言的 Templates 使用互斥 Display Conditions 時，才建立語言專用 Template。
 
+## 模組依賴
+
+- **Elementor Pro：** 四項功能的共同平台。
+- **Polylang：** taxonomy condition mapping 與 Conditions Cache Protection 需要。
+- **Advanced Custom Fields：** 只有 Archive ACF term correction 需要。
+- **Nested Loop Conditions Save Protection：** 不依賴 Polylang 或 ACF。
+
 ## 功能邊界
 
-- 必須有 Elementor Pro 與 Polylang；只有使用 ACF 修正時才需要 Advanced Custom Fields。
 - 只有 Polylang 明確連結的翻譯詞彙可以互相匹配。
 - 外掛不會翻譯、建立、複製或同步 Templates。
-- 不會新增 widget、Dynamic Tag 或語言切換器。
+- 不會新增 widget、Dynamic Tag、語言切換器、CSS 工具、效能工具或通用 query builder。
 - 不會修改詞彙內容、網址、slug、階層、語言關係或 WordPress query。
+- 不會把 WordPress Page 的 ACF 資料映射到 taxonomy term。
 - Cache Protection 是針對特定症狀的 workaround，不代表上游已確認存在 bug。
-- Nested Loop 防護依賴 Elementor 目前的 editor action 名稱，遇到未知未來 API 時會 fail-open。
-- 不會執行 activation migration、背景工作、診斷紀錄或自動資料修復。
+- 不會執行 activation migration、背景工作、診斷紀錄、telemetry、remote request 或自動資料修復。
 
 ## 系統需求
 
 - WordPress 6.5 或以上
 - PHP 7.4 或以上
 - 具備 Theme Builder 的 Elementor Pro
-- Polylang
+- 使用兩項 Polylang-aware selection／cache 功能時需要 Polylang
 - 使用 Archive ACF term correction 時需要 Advanced Custom Fields
 
 ## 開發與驗證
@@ -137,6 +151,7 @@ ACF 值必須儲存在 taxonomy term。本功能只修正該次 ACF 查詢使用
 ```bash
 php -l polylang-elementor-archive-bridge/polylang-elementor-archive-bridge.php
 php -l tests/run.php
+php -l tests/fail-open-without-elementor.php
 php tests/run.php
 php tests/fail-open-without-elementor.php
 node tests/nested-loop-conditions-save-protection.test.js
@@ -147,7 +162,7 @@ node tests/plugin-contract.test.js
 
 ## 最新版本
 
-`1.4.4` 新增預設開啟且可獨立取消的 Archive ACF term correction 設定，縮短非候選 ACF 路徑，並在上游行為已正確或 Elementor API 形狀未知時靜默放行。1.4.3 已由執行紀錄確認的匹配規則保持不變。
+`1.5.0` 採用 Template Integrity Bridge 公開品牌，並把文件依 Template Selection、Render Context 與 Editor State Integrity 重新組織。WordPress 技術身份、既有設定、各項 protection defaults、hooks、matching rules 與 runtime 行為均與 1.4.4 相同。
 
 ## 官方資料
 
