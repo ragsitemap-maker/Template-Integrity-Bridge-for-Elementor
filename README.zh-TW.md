@@ -32,6 +32,7 @@ Elementor Pro Theme Builder 透過顯示條件選擇範本。分類法條件會�
 - 提供預設關閉的 Conditions Cache Protection，處理特定 Theme Builder cache 重建症狀。
 - 提供預設關閉的 Nested Loop Conditions Save Protection，處理
   `Edit Loop Template` → `Save & Back` 的文件切換競態。
+- 修正 Elementor Pro 在 ACF 預覽讀值時，把目前分類詞彙物件轉成裸數字的問題。
 - 不修改已儲存的 Elementor 條件，也不改動前台彙整頁查詢。
 
 ## 運作方式
@@ -39,6 +40,11 @@ Elementor Pro Theme Builder 透過顯示條件選擇範本。分類法條件會�
 假設 Elementor 條件儲存英文分類 ID `10`，而 Polylang 將它與繁中分類 ID `20` 連結。在繁中彙整頁上，外掛會辨識這個翻譯關係，並在 Elementor 評估條件時提供相關的目前詞彙 ID；最後的 Include／Exclude 判斷仍由 Elementor 執行。
 
 對直接子詞彙與任意後代詞彙條件，外掛會用同樣方式比對目前詞彙的父層或祖先鏈。
+
+taxonomy Archive 透過 Template widget 載入含有 ACF Dynamic Tag 的 Saved
+Template 時，Elementor Pro 可能在預覽 request 把正確的 `WP_Term` 轉成裸數字，
+導致 ACF 誤認為 Post ID。外掛只會把這個完全符合目前 queried term 的錯誤值
+修正為 `term_{ID}`；其他 object ID 全部維持原值。
 
 ## 安裝方式
 
@@ -61,6 +67,12 @@ Elementor Pro Theme Builder 透過顯示條件選擇範本。分類法條件會�
 
 4. 不要為同一翻譯群組的其他語言另加重複條件。
 5. 發布範本，並逐一測試各語言的分類法彙整頁。
+
+### Archive Saved Template 內的 ACF 欄位
+
+ACF 值必須儲存在 taxonomy term。Elementor Template widget 載入含 ACF
+Dynamic Tag 的 Saved Template 時，Archive term identity 修正會自動生效，
+不需要另外啟用設定。本功能不會把獨立 WordPress Page 的 post meta 映射到 term。
 
 ## 選用防護功能
 
@@ -107,6 +119,9 @@ Loop Item 內容儲存，也不會攔截外層 Template 合法的 Conditions 變
 - 不會修改 WordPress 彙整頁查詢、詞彙內容、網址、slug 或語言關係。
 - 不會新增 widget、動態標籤或語言切換器。
 - 啟用時不會執行 migration 或自動修復。
+- ACF 修正只接受原始與 queried object 為同一個 `WP_Term`，且前一個 filter
+  回傳相同裸數字的情況。`null`、`WP_Term`、`term_{ID}`、Loop、Options、User、
+  Comment 與其他正確 context 全部原樣回傳。
 
 ## 系統需求
 
@@ -114,6 +129,7 @@ Loop Item 內容儲存，也不會攔截外層 Template 合法的 Conditions 變
 - PHP 7.4 或以上
 - 具備 Theme Builder 的 Elementor Pro
 - Polylang
+- 使用 Archive term identity 修正時需要 Advanced Custom Fields
 
 ## 官方資料
 
@@ -143,8 +159,8 @@ php -l tests/run.php
 
 ## 最新版本
 
-`1.3.0` 新增選用的 Nested Loop Conditions Save Protection；既有的分類翻譯
-映射與 Conditions Cache Protection 仍各自獨立運作。
+`1.4.0` 修正 Elementor Archive 預覽中的 ACF taxonomy term identity，同時保留
+Loop context，且上游已回傳正確 object ID 時會自動旁路。
 
 ## 授權
 

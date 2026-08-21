@@ -3,7 +3,7 @@ Contributors: site-development-team
 Tags: elementor, polylang, archive, theme builder, display conditions
 Requires at least: 6.5
 Requires PHP: 7.4
-Stable tag: 1.3.0
+Stable tag: 1.4.0
 License: GPL-2.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -40,6 +40,12 @@ setting prevents a Loop Item opened through a Loop Grid inside another Template
 from queueing an empty Theme Builder Conditions request during Save & Back. It
 does not block the Loop Item content save.
 
+Elementor Pro can turn a queried `WP_Term` into a bare numeric ID while ACF
+loads values in a Theme Builder preview. ACF then treats the number as a post
+ID and falls back to the field default. This plugin corrects only that exact
+current-archive-term identity to `term_{ID}`. Correct object IDs, Loop items,
+Options, Users, Comments, and future fixed Elementor output pass through.
+
 == Installation ==
 
 1. Upload the `polylang-elementor-archive-bridge` folder to
@@ -54,6 +60,9 @@ does not block the Loop Item content save.
 7. Optional: enable Nested Loop Conditions Save Protection if editing a Loop
    Item from inside another Template causes the outer Template's Display
    Conditions to disappear after Save & Back.
+8. When a Saved Template inside a taxonomy Archive uses an ACF Dynamic Tag,
+   store the value on the taxonomy term. The term identity correction is
+   automatic and has no setting.
 
 Example:
 
@@ -76,6 +85,7 @@ Supported:
 * One unchanged Elementor Template ID across languages
 * Optional all-language Elementor conditions cache regeneration
 * Optional nested Loop Item conditions-save race protection
+* ACF term identity correction for taxonomy Archive previews
 
 Not included:
 
@@ -85,6 +95,7 @@ Not included:
 * Automatic repair of missing or incorrectly linked Polylang term translations
 * Changes to term content, URLs, slugs, hierarchy, or language relationships
 * A migration layer or activation-time automatic repair
+* Mapping WordPress Page post meta to taxonomy term meta
 
 Limitations:
 
@@ -94,6 +105,9 @@ Limitations:
 * The bridge depends on Elementor Pro filter hooks that may change in a future release.
 * Nested Loop protection depends on Elementor's current `loop-item` document type
   and `theme_builder_save_conditions` editor action names.
+* The ACF correction applies only when the original object and queried object
+  are the same `WP_Term` and an earlier filter returns the same bare numeric ID.
+  Correct upstream output is returned unchanged.
 
 == Frequently Asked Questions ==
 
@@ -133,7 +147,21 @@ Save & Back causes the outer Template's Display Conditions to disappear. The
 guard runs only in the Elementor editor and does not block Loop content saves.
 Conditions already deleted before enabling it must be recreated once.
 
+= Does the ACF Archive term correction need to be enabled? =
+
+No. It has no setting and runs only when every strict condition matches the
+confirmed `WP_Term` to bare-number failure. If Elementor Pro returns `null`, a
+`WP_Term`, `term_{ID}`, or another valid object ID, the plugin returns it
+unchanged. ACF values must be stored on the taxonomy term, not on a separate
+WordPress Page.
+
 == Changelog ==
+
+= 1.4.0 =
+
+* Correct the current taxonomy Archive term identity for ACF in Elementor previews.
+* Preserve Post Loop, Taxonomy Loop, Options, User, Comment, and non-Archive contexts.
+* Automatically pass through correct output after an upstream Elementor Pro fix.
 
 = 1.3.0 =
 
