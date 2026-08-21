@@ -32,6 +32,8 @@ It is not appropriate when:
 - Offers disabled-by-default Conditions Cache Protection for a specific Theme Builder cache-rebuild symptom.
 - Offers disabled-by-default Nested Loop Conditions Save Protection for the
   `Edit Loop Template` → `Save & Back` document-switch race.
+- Corrects the current taxonomy term identity when Elementor Pro turns an ACF
+  preview object into a bare numeric ID.
 - Does not modify saved Elementor conditions or frontend archive queries.
 
 ## How it works
@@ -39,6 +41,12 @@ It is not appropriate when:
 Assume an Elementor condition is saved for English category ID `10`, and Polylang links it to Traditional Chinese category ID `20`. On the translated archive, the plugin recognizes the linked translation and supplies the relevant current term ID while Elementor evaluates the condition. Elementor still performs its native include/exclude check.
 
 For direct-child and any-descendant conditions, the bridge applies the same translation-group comparison to the current term's parent or ancestor chain.
+
+For ACF Dynamic Tags inside a Saved Template used by a taxonomy Archive,
+Elementor Pro can convert the correct queried `WP_Term` into a bare number in
+preview requests. ACF interprets that number as a post ID. The bridge changes
+only that exact current-term value to `term_{ID}`; every other object ID passes
+through unchanged.
 
 ## Installation
 
@@ -61,6 +69,13 @@ For a manual installation, copy the `polylang-elementor-archive-bridge` director
 
 4. Do not add separate conditions for translations in the same term group.
 5. Publish the template and test each translated taxonomy archive.
+
+### ACF fields inside an Archive Saved Template
+
+Store the ACF field value on the taxonomy term. When an Elementor Template
+widget loads a Saved Template containing an ACF Dynamic Tag, the Archive term
+identity correction is automatic and has no setting. It does not map values
+from a separate WordPress Page to the term.
 
 ## Optional protections
 
@@ -112,6 +127,10 @@ an empty value. Recreate them once after enabling the setting.
 - The plugin does not alter WordPress archive queries, term content, URLs, slugs, or language relationships.
 - The plugin does not add widgets, dynamic tags, or a language switcher.
 - No migration layer or automatic repair runs on activation.
+- The ACF correction requires the original object and queried object to be the
+  same `WP_Term`, and an earlier filter to return the same bare numeric ID.
+  `null`, `WP_Term`, `term_{ID}`, Loop, Options, User, Comment, and other
+  correct contexts are returned unchanged.
 
 ## Requirements
 
@@ -119,6 +138,7 @@ an empty value. Recreate them once after enabling the setting.
 - PHP 7.4 or later
 - Elementor Pro with Theme Builder
 - Polylang
+- Advanced Custom Fields when using the Archive term identity correction
 
 ## Official references
 
@@ -148,9 +168,9 @@ The `tests/` directory is source-only and is intentionally excluded from the ins
 
 ## Latest release
 
-Version `1.3.0` adds the optional Nested Loop Conditions Save Protection and
-keeps all existing archive translation and cache-protection behavior
-independent.
+Version `1.4.0` fixes ACF taxonomy-term identity in Elementor Archive previews
+while preserving Loop contexts and automatically passing through correct
+upstream output.
 
 ## License
 

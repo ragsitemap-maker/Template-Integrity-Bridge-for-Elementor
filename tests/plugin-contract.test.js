@@ -7,9 +7,21 @@ const plugin = fs.readFileSync(
 	'polylang-elementor-archive-bridge/polylang-elementor-archive-bridge.php',
 	'utf8'
 );
+const wordpressReadme = fs.readFileSync( 'polylang-elementor-archive-bridge/readme.txt', 'utf8' );
+const publicReadme = fs.readFileSync( 'README.md', 'utf8' );
+const publicReadmeZhTw = fs.readFileSync( 'README.zh-TW.md', 'utf8' );
 
-assert.match( plugin, /Version:\s*1\.3\.0/ );
-assert.match( plugin, /const VERSION\s*=\s*'1\.3\.0';/ );
+assert.match( plugin, /Version:\s*1\.4\.0/ );
+assert.match( plugin, /const VERSION\s*=\s*'1\.4\.0';/ );
+assert.match( wordpressReadme, /Stable tag:\s*1\.4\.0/ );
+assert.match( wordpressReadme, /= 1\.4\.0 =/ );
+assert.match( publicReadme, /Version `1\.4\.0`/ );
+assert.match( publicReadmeZhTw, /`1\.4\.0`/ );
+assert.match( plugin, /'acf\/pre_load_post_id'[\s\S]*?normalize_archive_term_post_id[\s\S]*?20,[\s\S]*?2/ );
+assert.match( plugin, /public static function normalize_archive_term_post_id\( \$preload, \$post_id \)/ );
+assert.match( plugin, /preg_match\( '\/\^\[0-9\]\+\$\/D', \$preload \)/ );
+assert.doesNotMatch( plugin, /elementor\/frontend\/widget\/(?:before|after)_render/ );
+assert.doesNotMatch( plugin, /peab_bridge_archive_acf_term_context/ );
 assert.match(
 	plugin,
 	/const OPTION_NESTED_LOOP_PROTECTION\s*=\s*'peab_protect_nested_loop_conditions';/

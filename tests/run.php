@@ -32,6 +32,7 @@ $test_state = array(
 	'settings_sections'     => array(),
 	'settings_fields'       => array(),
 	'enqueued_scripts'      => array(),
+	'archive_type'          => '',
 );
 
 class WP_Term {
@@ -43,6 +44,14 @@ class WP_Term {
 		$this->term_id  = $term_id;
 		$this->taxonomy = $taxonomy;
 		$this->parent   = $parent;
+	}
+}
+
+class WP_Post {
+	public $ID;
+
+	public function __construct( $post_id ) {
+		$this->ID = $post_id;
 	}
 }
 
@@ -74,6 +83,24 @@ function is_admin() {
 	global $test_state;
 
 	return $test_state['is_admin'];
+}
+
+function is_category() {
+	global $test_state;
+
+	return 'category' === $test_state['archive_type'];
+}
+
+function is_tag() {
+	global $test_state;
+
+	return 'tag' === $test_state['archive_type'];
+}
+
+function is_tax() {
+	global $test_state;
+
+	return 'tax' === $test_state['archive_type'];
 }
 
 function add_action( $hook_name, $callback, $priority = 10, $accepted_args = 1 ) {
@@ -310,6 +337,23 @@ assert_same(
 	'repeated bootstrap does not duplicate the cache-protection filter'
 );
 
+assert_same(
+	1,
+	registered_callback_count( $test_state['filters'], 'acf/pre_load_post_id' ),
+	'ACF term identity filter is registered once'
+);
+$acf_filter_callbacks = array_values( $test_state['filters']['acf/pre_load_post_id'][20] );
+assert_same(
+	20,
+	$acf_filter_callbacks[0]['priority'],
+	'ACF term identity filter runs after Elementor Pro priority 10'
+);
+assert_same(
+	2,
+	$acf_filter_callbacks[0]['accepted_args'],
+	'ACF term identity filter receives preload and original object ID'
+);
+
 $cache_query_args = array(
 	'post_type' => array( 'elementor_library' ),
 	'meta_key'  => '_elementor_conditions',
@@ -421,6 +465,126 @@ assert_same(
 	isset( $test_state['settings_fields'][ Plugin::OPTION_NESTED_LOOP_PROTECTION ] ),
 	'nested-loop checkbox field is registered'
 );
+
+$test_state['archive_type']   = 'category';
+$test_state['queried_object'] = new WP_Term( 123, 'category' );
+$archive_term                 = new WP_Term( 123, 'category' );
+assert_same(
+	'term_123',
+	Plugin::normalize_archive_term_post_id( 123, $archive_term ),
+	'integer archive term ID is normalized for ACF'
+);
+assert_same(
+	'term_123',
+	Plugin::normalize_archive_term_post_id( '123', $archive_term ),
+	'decimal-string archive term ID is normalized for ACF'
+);
+
+$test_state['archive_type'] = 'tag';
+assert_same(
+	'term_123',
+	Plugin::normalize_archive_term_post_id( 123, $archive_term ),
+	'tag archive uses the same term identity correction'
+);
+$test_state['archive_type'] = 'tax';
+assert_same(
+	'term_123',
+	Plugin::normalize_archive_term_post_id( 123, $archive_term ),
+	'custom taxonomy archive uses the same term identity correction'
+);
+
+$test_state['archive_type'] = '';
+assert_same(
+	123,
+	Plugin::normalize_archive_term_post_id( 123, $archive_term ),
+	'non-taxonomy archive leaves the preload unchanged'
+);
+
+$test_state['archive_type'] = 'category';
+assert_same(
+	123,
+	Plugin::normalize_archive_term_post_id( 123, new WP_Post( 123 ) ),
+	'post object remains unchanged'
+);
+assert_same(
+	'options',
+	Plugin::normalize_archive_term_post_id( 'options', 'options' ),
+	'options object ID remains unchanged'
+);
+assert_same(
+	'user_7',
+	Plugin::normalize_archive_term_post_id( 'user_7', 'user_7' ),
+	'user object ID remains unchanged'
+);
+assert_same(
+	'comment_9',
+	Plugin::normalize_archive_term_post_id( 'comment_9', 'comment_9' ),
+	'comment object ID remains unchanged'
+);
+
+$test_state['queried_object'] = new WP_Term( 123, 'category' );
+assert_same(
+	456,
+	Plugin::normalize_archive_term_post_id( 456, new WP_Term( 456, 'category' ) ),
+	'different taxonomy-loop term remains unchanged'
+);
+assert_same(
+	123,
+	Plugin::normalize_archive_term_post_id( 123, new WP_Term( 123, 'post_tag' ) ),
+	'different taxonomy remains unchanged'
+);
+assert_same(
+	456,
+	Plugin::normalize_archive_term_post_id( 456, $archive_term ),
+	'different preload ID remains unchanged'
+);
+
+$invalid_bare_ids = array( 123.0, '123.0', -123, '-123', '1.23e2', '', 0, '0', true, false, ' 123', '+123' );
+foreach ( $invalid_bare_ids as $invalid_bare_id ) {
+	assert_same(
+		$invalid_bare_id,
+		Plugin::normalize_archive_term_post_id( $invalid_bare_id, $archive_term ),
+		'invalid bare term ID shape remains unchanged: ' . var_export( $invalid_bare_id, true )
+	);
+}
+
+assert_same(
+	null,
+	Plugin::normalize_archive_term_post_id( null, $archive_term ),
+	'null preload remains unchanged for an upstream fix'
+);
+assert_same(
+	'term_123',
+	Plugin::normalize_archive_term_post_id( 'term_123', $archive_term ),
+	'already normalized term ID remains unchanged'
+);
+$upstream_term = new WP_Term( 123, 'category' );
+assert_same(
+	$upstream_term,
+	Plugin::normalize_archive_term_post_id( $upstream_term, $archive_term ),
+	'upstream WP_Term result remains the same object'
+);
+assert_same(
+	'custom_object_123',
+	Plugin::normalize_archive_term_post_id( 'custom_object_123', $archive_term ),
+	'other valid object ID remains unchanged'
+);
+
+$test_state['queried_object'] = null;
+assert_same(
+	123,
+	Plugin::normalize_archive_term_post_id( 123, $archive_term ),
+	'missing queried object fails open'
+);
+$test_state['queried_object'] = new WP_Post( 123 );
+assert_same(
+	123,
+	Plugin::normalize_archive_term_post_id( 123, $archive_term ),
+	'non-term queried object fails open'
+);
+
+$test_state['archive_type']   = '';
+$test_state['queried_object'] = null;
 
 $category_condition = array(
 	'type'     => 'include',

@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Polylang Elementor Archive Bridge
  * Description: Lets one Elementor Pro archive template condition match every Polylang translation of the selected taxonomy term.
- * Version: 1.3.0
+ * Version: 1.4.0
  * Author: ragsitemap-maker
  * License: GPL-2.0-or-later
  * License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -28,7 +28,7 @@ defined( 'ABSPATH' ) || exit;
  */
 final class Plugin {
 
-	const VERSION           = '1.3.0';
+	const VERSION           = '1.4.0';
 	const MODE_EXACT        = 'exact';
 	const MODE_DIRECT_CHILD = 'direct_child';
 	const MODE_ANY_CHILD    = 'any_child';
@@ -65,6 +65,13 @@ final class Plugin {
 	 */
 	public static function boot() {
 		add_filter(
+			'acf/pre_load_post_id',
+			array( __CLASS__, 'normalize_archive_term_post_id' ),
+			20,
+			2
+		);
+
+		add_filter(
 			'elementor/theme/get_location_templates/condition_sub_id',
 			array( __CLASS__, 'map_condition_term_id' ),
 			20,
@@ -94,6 +101,55 @@ final class Plugin {
 				array( __CLASS__, 'add_settings_action_link' )
 			);
 		}
+	}
+
+	/**
+	 * Preserve the queried taxonomy term identity in Elementor previews.
+	 *
+	 * Elementor Pro may convert a WP_Term passed to ACF into a bare numeric
+	 * term ID. ACF interprets that value as a post ID, so normalize only that
+	 * exact failure shape and leave every other object ID unchanged.
+	 *
+	 * @param mixed $preload A value returned by an earlier pre-load filter.
+	 * @param mixed $post_id The original object ID passed to ACF.
+	 * @return mixed
+	 */
+	public static function normalize_archive_term_post_id( $preload, $post_id ) {
+		if ( ! is_category() && ! is_tag() && ! is_tax() ) {
+			return $preload;
+		}
+
+		if ( ! $post_id instanceof \WP_Term ) {
+			return $preload;
+		}
+
+		$is_bare_term_id = is_int( $preload ) && 0 < $preload;
+
+		if (
+			is_string( $preload )
+			&& '' !== $preload
+			&& 1 === preg_match( '/^[0-9]+$/D', $preload )
+			&& 0 < (int) $preload
+		) {
+			$is_bare_term_id = true;
+		}
+
+		if ( ! $is_bare_term_id ) {
+			return $preload;
+		}
+
+		$queried_term = get_queried_object();
+
+		if (
+			! $queried_term instanceof \WP_Term
+			|| (int) $queried_term->term_id !== (int) $post_id->term_id
+			|| $queried_term->taxonomy !== $post_id->taxonomy
+			|| (int) $preload !== (int) $post_id->term_id
+		) {
+			return $preload;
+		}
+
+		return 'term_' . (int) $post_id->term_id;
 	}
 
 	/**
