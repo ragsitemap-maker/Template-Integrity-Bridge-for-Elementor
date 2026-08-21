@@ -33,6 +33,14 @@ $test_state = array(
 	'settings_fields'       => array(),
 	'enqueued_scripts'      => array(),
 	'archive_type'          => '',
+	'current_post_id'        => 0,
+	'add_option_calls'       => array(),
+	'fail_add_option'        => false,
+	'concurrent_option'      => null,
+	'get_queried_calls'      => 0,
+	'get_the_id_calls'       => 0,
+	'get_current_calls'      => 0,
+	'get_main_id_calls'      => 0,
 );
 
 class WP_Term {
@@ -49,11 +57,125 @@ class WP_Term {
 
 class WP_Post {
 	public $ID;
+	public $post_type;
 
-	public function __construct( $post_id ) {
-		$this->ID = $post_id;
+	public function __construct( $post_id, $post_type = 'post' ) {
+		$this->ID        = $post_id;
+		$this->post_type = $post_type;
 	}
 }
+
+class Test_Widget {
+	private $name;
+	private $template_id;
+
+	public function __construct( $name, $template_id = 0 ) {
+		$this->name        = $name;
+		$this->template_id = $template_id;
+	}
+
+	public function get_name() {
+		return $this->name;
+	}
+
+	public function get_settings( $key ) {
+		return 'template_id' === $key ? $this->template_id : null;
+	}
+}
+
+class Test_Throwing_Name_Widget {
+	public function get_name() {
+		throw new RuntimeException( 'Elementor widget name unavailable' );
+	}
+}
+
+class Test_Throwing_Settings_Widget {
+	public function get_name() {
+		return 'template';
+	}
+
+	public function get_settings( $key ) {
+		unset( $key );
+		throw new RuntimeException( 'Elementor widget settings unavailable' );
+	}
+}
+
+abstract class Test_Elementor_Document {
+	private $main_id;
+
+	public function __construct( $main_id ) {
+		$this->main_id = $main_id;
+	}
+
+	public function get_main_id() {
+		global $test_state;
+
+		++$test_state['get_main_id_calls'];
+		return $this->main_id;
+	}
+}
+
+class Test_Loop_Document extends Test_Elementor_Document {
+	public static function get_type() { return 'loop-item'; }
+}
+
+class Test_Archive_Document extends Test_Elementor_Document {
+	public static function get_type() { return 'archive'; }
+}
+
+class Test_Malformed_Type_Document extends Test_Elementor_Document {
+	public static function get_type() { return array( 'loop-item' ); }
+}
+
+class Test_Throwing_Type_Document extends Test_Elementor_Document {
+	public static function get_type() {
+		throw new RuntimeException( 'Elementor document type unavailable' );
+	}
+}
+
+class Test_Throwing_Id_Document extends Test_Elementor_Document {
+	public static function get_type() {
+		return 'loop-item';
+	}
+
+	public function get_main_id() {
+		throw new RuntimeException( 'Elementor document ID unavailable' );
+	}
+}
+
+class Test_Documents_Manager {
+	public $current;
+
+	public function get_current() {
+		global $test_state;
+
+		++$test_state['get_current_calls'];
+		return $this->current;
+	}
+}
+
+class Test_Throwing_Documents_Manager {
+	public function get_current() {
+		throw new RuntimeException( 'Elementor documents manager unavailable' );
+	}
+}
+
+class Test_Elementor_Plugin {
+	public static $instance;
+	public static $throw_on_instance = false;
+	public $documents;
+
+	public function __construct() { $this->documents = new Test_Documents_Manager(); }
+	public static function instance() {
+		if ( self::$throw_on_instance ) {
+			throw new RuntimeException( 'Elementor plugin instance unavailable' );
+		}
+		return self::$instance;
+	}
+}
+
+class_alias( 'Test_Elementor_Plugin', 'Elementor\Plugin' );
+Test_Elementor_Plugin::$instance = new Test_Elementor_Plugin();
 
 class WP_Error {}
 
@@ -77,6 +199,26 @@ function get_option( $option_name, $default = false ) {
 	return array_key_exists( $option_name, $test_state['options'] )
 		? $test_state['options'][ $option_name ]
 		: $default;
+}
+
+function add_option( $option_name, $value = '', $deprecated = '', $autoload = null ) {
+	global $test_state;
+
+	$test_state['add_option_calls'][] = compact( 'option_name', 'value', 'deprecated', 'autoload' );
+
+	if ( $test_state['fail_add_option'] ) {
+		if ( null !== $test_state['concurrent_option'] ) {
+			$test_state['options'][ $option_name ] = $test_state['concurrent_option'];
+		}
+		return false;
+	}
+
+	if ( array_key_exists( $option_name, $test_state['options'] ) ) {
+		return false;
+	}
+
+	$test_state['options'][ $option_name ] = $value;
+	return true;
 }
 
 function is_admin() {
@@ -125,6 +267,16 @@ function esc_html__( $text, $domain ) {
 	unset( $domain );
 
 	return $text;
+}
+
+function esc_attr( $value ) {
+	return (string) $value;
+}
+
+function checked( $checked ) {
+	if ( $checked ) {
+		echo 'checked="checked"';
+	}
 }
 
 function register_setting( $group, $option_name, $args ) {
@@ -228,7 +380,15 @@ function is_wp_error( $thing ) {
 function get_queried_object() {
 	global $test_state;
 
+	++$test_state['get_queried_calls'];
 	return $test_state['queried_object'];
+}
+
+function get_the_ID() {
+	global $test_state;
+
+	++$test_state['get_the_id_calls'];
+	return $test_state['current_post_id'];
 }
 
 require dirname( __DIR__ ) . '/polylang-elementor-archive-bridge/polylang-elementor-archive-bridge.php';
@@ -298,6 +458,57 @@ assert_same(
 	is_action_registered( 'elementor/editor/after_enqueue_scripts' ),
 	'nested-loop editor hook is not registered by default'
 );
+assert_same(
+	true,
+	Plugin::is_archive_acf_term_correction_enabled(),
+	'missing Archive ACF option is provisioned as enabled'
+);
+assert_same(
+	1,
+	$test_state['options'][ Plugin::OPTION_ARCHIVE_ACF_TERM_CORRECTION ],
+	'first bootstrap stores the Archive ACF enabled default'
+);
+assert_same( 1, count( $test_state['add_option_calls'] ), 'missing Archive ACF option is added only once' );
+assert_same( true, $test_state['add_option_calls'][0]['autoload'], 'Archive ACF default is explicitly autoloaded' );
+Plugin::is_archive_acf_term_correction_enabled();
+assert_same( 1, count( $test_state['add_option_calls'] ), 'existing Archive ACF option does not call add_option again' );
+
+$add_calls_before = count( $test_state['add_option_calls'] );
+$test_state['options'][ Plugin::OPTION_ARCHIVE_ACF_TERM_CORRECTION ] = 'invalid';
+assert_same( false, Plugin::is_archive_acf_term_correction_enabled(), 'malformed Archive ACF option remains disabled' );
+assert_same( 'invalid', $test_state['options'][ Plugin::OPTION_ARCHIVE_ACF_TERM_CORRECTION ], 'malformed Archive ACF option is not overwritten' );
+assert_same( $add_calls_before, count( $test_state['add_option_calls'] ), 'malformed Archive ACF option is not re-provisioned' );
+
+unset(
+	$test_state['actions']['elementor/frontend/widget/before_render'],
+	$test_state['actions']['elementor/frontend/widget/after_render'],
+	$test_state['filters']['acf/pre_load_post_id']
+);
+Plugin::boot();
+assert_same( false, is_action_registered( 'elementor/frontend/widget/before_render' ), 'disabled Archive ACF feature does not register before_render' );
+assert_same( false, is_action_registered( 'elementor/frontend/widget/after_render' ), 'disabled Archive ACF feature does not register after_render' );
+assert_same( false, is_filter_registered( 'acf/pre_load_post_id' ), 'disabled Archive ACF feature does not register its ACF filter' );
+assert_same( true, is_filter_registered( 'elementor/theme/get_location_templates/condition_sub_id' ), 'disabling Archive ACF leaves the legacy condition mapping active' );
+
+$test_state['options'][ Plugin::OPTION_ARCHIVE_ACF_TERM_CORRECTION ] = 0;
+assert_same( false, Plugin::is_archive_acf_term_correction_enabled(), 'unchecked Archive ACF option is disabled' );
+Plugin::boot();
+assert_same( false, is_action_registered( 'elementor/frontend/widget/before_render' ), 'unchecked Archive ACF option keeps before_render unregistered' );
+assert_same( false, is_action_registered( 'elementor/frontend/widget/after_render' ), 'unchecked Archive ACF option keeps after_render unregistered' );
+assert_same( false, is_filter_registered( 'acf/pre_load_post_id' ), 'unchecked Archive ACF option keeps the ACF filter unregistered' );
+
+unset( $test_state['options'][ Plugin::OPTION_ARCHIVE_ACF_TERM_CORRECTION ] );
+$test_state['fail_add_option']   = true;
+$test_state['concurrent_option'] = 1;
+$add_calls_before                = count( $test_state['add_option_calls'] );
+assert_same( true, Plugin::is_archive_acf_term_correction_enabled(), 'add_option race remains enabled for the current request' );
+assert_same( $add_calls_before + 1, count( $test_state['add_option_calls'] ), 'add_option race attempts one provision' );
+Plugin::is_archive_acf_term_correction_enabled();
+assert_same( $add_calls_before + 1, count( $test_state['add_option_calls'] ), 'concurrently stored option prevents another add attempt' );
+$test_state['fail_add_option']   = false;
+$test_state['concurrent_option'] = null;
+Plugin::boot();
+assert_same( true, is_filter_registered( 'acf/pre_load_post_id' ), 'enabled Archive ACF feature restores its runtime hooks' );
 
 $test_state['options'][ Plugin::OPTION_CACHE_PROTECTION ] = 'invalid';
 assert_same(
@@ -353,6 +564,11 @@ assert_same(
 	$acf_filter_callbacks[0]['accepted_args'],
 	'ACF term identity filter receives preload and original object ID'
 );
+assert_same( 1, registered_callback_count( $test_state['actions'], 'elementor/frontend/widget/before_render' ), 'Template widget context starts once' );
+$template_before_callbacks = array_values( $test_state['actions']['elementor/frontend/widget/before_render'][20] );
+assert_same( 20, $template_before_callbacks[0]['priority'], 'Template context starts after Template ID translation' );
+assert_same( false, is_action_registered( 'elementor/template-library/before_get_source_data' ), 'disproved Template source hook is not registered' );
+assert_same( 1, registered_callback_count( $test_state['actions'], 'elementor/frontend/widget/after_render' ), 'Template widget context ends once' );
 
 $cache_query_args = array(
 	'post_type' => array( 'elementor_library' ),
@@ -381,6 +597,9 @@ assert_same( 1, Plugin::sanitize_cache_protection_option( '1' ), 'checked settin
 assert_same( 0, Plugin::sanitize_nested_loop_protection_option( 0 ), 'unchecked nested-loop setting sanitizes to zero' );
 assert_same( 0, Plugin::sanitize_nested_loop_protection_option( 'invalid' ), 'malformed nested-loop setting sanitizes to zero' );
 assert_same( 1, Plugin::sanitize_nested_loop_protection_option( '1' ), 'checked nested-loop setting sanitizes to one' );
+assert_same( 0, Plugin::sanitize_archive_acf_term_correction_option( 0 ), 'unchecked Archive ACF setting sanitizes to zero' );
+assert_same( 0, Plugin::sanitize_archive_acf_term_correction_option( 'invalid' ), 'malformed Archive ACF setting sanitizes to zero' );
+assert_same( 1, Plugin::sanitize_archive_acf_term_correction_option( '1' ), 'checked Archive ACF setting sanitizes to one' );
 
 $test_state['options'][ Plugin::OPTION_NESTED_LOOP_PROTECTION ] = 'invalid';
 assert_same(
@@ -465,6 +684,42 @@ assert_same(
 	isset( $test_state['settings_fields'][ Plugin::OPTION_NESTED_LOOP_PROTECTION ] ),
 	'nested-loop checkbox field is registered'
 );
+assert_same(
+	1,
+	$test_state['registered_settings'][ Plugin::OPTION_ARCHIVE_ACF_TERM_CORRECTION ]['args']['default'],
+	'registered Archive ACF setting defaults to one'
+);
+assert_same(
+	true,
+	isset( $test_state['settings_sections'][ Plugin::SETTINGS_SECTION_ARCHIVE_ACF ] ),
+	'Archive ACF settings section is registered independently'
+);
+assert_same(
+	Plugin::SETTINGS_SECTION_ARCHIVE_ACF,
+	$test_state['settings_fields'][ Plugin::OPTION_ARCHIVE_ACF_TERM_CORRECTION ]['section'],
+	'Archive ACF checkbox belongs to its independent section'
+);
+
+$test_state['options'][ Plugin::OPTION_ARCHIVE_ACF_TERM_CORRECTION ] = 1;
+ob_start();
+Plugin::render_archive_acf_term_correction_field();
+$archive_acf_field = ob_get_clean();
+assert_same( true, false !== strpos( $archive_acf_field, 'type="hidden"' ), 'Archive ACF field submits zero when unchecked' );
+assert_same( true, false !== strpos( $archive_acf_field, 'checked="checked"' ), 'Archive ACF field renders checked by default' );
+$test_state['options'][ Plugin::OPTION_ARCHIVE_ACF_TERM_CORRECTION ] = 0;
+ob_start();
+Plugin::render_archive_acf_term_correction_field();
+$archive_acf_field = ob_get_clean();
+assert_same( false, false !== strpos( $archive_acf_field, 'checked="checked"' ), 'Archive ACF field renders unchecked when disabled' );
+$test_state['options'][ Plugin::OPTION_ARCHIVE_ACF_TERM_CORRECTION ] = 1;
+
+$test_state['get_queried_calls'] = 0;
+$test_state['get_the_id_calls']  = 0;
+$test_state['get_current_calls'] = 0;
+assert_same( 'options', Plugin::normalize_archive_term_post_id( 'options', 'options' ), 'non-candidate ACF identity returns immediately' );
+assert_same( 0, $test_state['get_queried_calls'], 'non-candidate path does not inspect the queried object' );
+assert_same( 0, $test_state['get_the_id_calls'], 'non-candidate path does not read the current post' );
+assert_same( 0, $test_state['get_current_calls'], 'non-candidate path does not inspect Elementor documents' );
 
 $test_state['archive_type']   = 'category';
 $test_state['queried_object'] = new WP_Term( 123, 'category' );
@@ -582,6 +837,171 @@ assert_same(
 	Plugin::normalize_archive_term_post_id( 123, $archive_term ),
 	'non-term queried object fails open'
 );
+
+$test_state['archive_type']    = 'category';
+$test_state['queried_object']  = new WP_Term( 1330, 'category' );
+$test_state['current_post_id'] = 77370;
+$template_widget               = new Test_Widget( 'template', 109458 );
+Test_Elementor_Plugin::$instance->documents->current = new Test_Loop_Document( 109458 );
+Plugin::enter_template_widget_context( $template_widget );
+$test_state['get_queried_calls'] = 0;
+$test_state['get_the_id_calls']  = 0;
+$test_state['get_current_calls'] = 0;
+$test_state['get_main_id_calls'] = 0;
+assert_same(
+	'term_1330',
+	Plugin::normalize_archive_term_post_id( null, 77370 ),
+	'directly embedded Loop Item Template uses the Archive term'
+);
+assert_same( 1, $test_state['get_queried_calls'], 'embedded candidate reads the queried term once' );
+assert_same( 1, $test_state['get_the_id_calls'], 'embedded candidate reads the current post once' );
+assert_same( 1, $test_state['get_current_calls'], 'embedded candidate reads the Elementor document once' );
+assert_same( 1, $test_state['get_main_id_calls'], 'embedded candidate reads the document main ID once' );
+$ordinary_nested_widget = new Test_Widget( 'heading', 0 );
+Plugin::leave_template_widget_context( $ordinary_nested_widget );
+assert_same(
+	'term_1330',
+	Plugin::normalize_archive_term_post_id( null, 77370 ),
+	'an ordinary nested widget after_render does not pop the Template context'
+);
+assert_same(
+	'term_1330',
+	Plugin::normalize_archive_term_post_id( null, '77370' ),
+	'decimal-string current post ID uses the Archive term in the same exact context'
+);
+assert_same(
+	'term_upstream',
+	Plugin::normalize_archive_term_post_id( 'term_upstream', 77370 ),
+	'correct upstream output passes through inside embedded Loop Item Template'
+);
+assert_same(
+	null,
+	Plugin::normalize_archive_term_post_id( null, 77371 ),
+	'post ID different from get_the_ID remains unchanged'
+);
+
+Test_Elementor_Plugin::$instance->documents->current = new Test_Loop_Document( 109945 );
+assert_same(
+	null,
+	Plugin::normalize_archive_term_post_id( null, 77370 ),
+	'real nested Post Loop document ID remains unchanged'
+);
+assert_same(
+	null,
+	Plugin::normalize_archive_term_post_id( null, new WP_Term( 2184, 'product_cat' ) ),
+	'real nested Taxonomy Loop term remains unchanged'
+);
+
+Test_Elementor_Plugin::$instance->documents->current = new Test_Archive_Document( 109458 );
+assert_same(
+	null,
+	Plugin::normalize_archive_term_post_id( null, 77370 ),
+	'non-Loop Elementor document remains unchanged'
+);
+
+$stable_elementor = Test_Elementor_Plugin::$instance;
+$stable_documents = $stable_elementor->documents;
+set_error_handler(
+	function ( $severity, $message, $file, $line ) {
+		throw new ErrorException( $message, 0, $severity, $file, $line );
+	}
+);
+Test_Elementor_Plugin::$instance = null;
+assert_same( null, Plugin::normalize_archive_term_post_id( null, 77370 ), 'non-object Elementor instance fails open without warnings' );
+Test_Elementor_Plugin::$instance = (object) array( 'documents' => array() );
+assert_same( null, Plugin::normalize_archive_term_post_id( null, 77370 ), 'malformed Elementor documents property fails open without warnings' );
+Test_Elementor_Plugin::$instance = (object) array( 'documents' => new stdClass() );
+assert_same( null, Plugin::normalize_archive_term_post_id( null, 77370 ), 'documents manager without get_current fails open without warnings' );
+Test_Elementor_Plugin::$instance = $stable_elementor;
+$stable_elementor->documents->current = new stdClass();
+assert_same( null, Plugin::normalize_archive_term_post_id( null, 77370 ), 'document without identity methods fails open without warnings' );
+$stable_elementor->documents->current = new Test_Malformed_Type_Document( 109458 );
+$main_id_calls_before = $test_state['get_main_id_calls'];
+assert_same( null, Plugin::normalize_archive_term_post_id( null, 77370 ), 'malformed document type fails open without warnings' );
+assert_same( $main_id_calls_before, $test_state['get_main_id_calls'], 'malformed document type returns before reading its main ID' );
+$stable_elementor->documents->current = new Test_Loop_Document( array( 109458 ) );
+assert_same( null, Plugin::normalize_archive_term_post_id( null, 77370 ), 'malformed document ID fails open without warnings' );
+$resource_document_id = fopen( 'php://memory', 'r' );
+$stable_elementor->documents->current = new Test_Loop_Document( $resource_document_id );
+assert_same( null, Plugin::normalize_archive_term_post_id( null, 77370 ), 'resource document ID fails open without warnings' );
+fclose( $resource_document_id );
+$stable_elementor->documents->current = new Test_Throwing_Type_Document( 109458 );
+assert_same( null, Plugin::normalize_archive_term_post_id( null, 77370 ), 'throwing document type API fails open without warnings' );
+$stable_elementor->documents->current = new Test_Throwing_Id_Document( 109458 );
+assert_same( null, Plugin::normalize_archive_term_post_id( null, 77370 ), 'throwing document ID API fails open without warnings' );
+$stable_elementor->documents = new Test_Throwing_Documents_Manager();
+assert_same( null, Plugin::normalize_archive_term_post_id( null, 77370 ), 'throwing documents manager fails open without warnings' );
+$stable_elementor->documents = $stable_documents;
+Test_Elementor_Plugin::$throw_on_instance = true;
+assert_same( null, Plugin::normalize_archive_term_post_id( null, 77370 ), 'throwing Elementor instance API fails open without warnings' );
+Test_Elementor_Plugin::$throw_on_instance = false;
+restore_error_handler();
+
+Test_Elementor_Plugin::$instance->documents->current = new Test_Loop_Document( 109458 );
+$test_state['queried_object'] = new WP_Term( 1331, 'category' );
+assert_same(
+	null,
+	Plugin::normalize_archive_term_post_id( null, 77370 ),
+	'queried term different from captured Archive term remains unchanged'
+);
+$test_state['queried_object'] = new WP_Term( 1330, 'post_tag' );
+assert_same(
+	null,
+	Plugin::normalize_archive_term_post_id( null, 77370 ),
+	'queried taxonomy different from captured Archive taxonomy remains unchanged'
+);
+$test_state['queried_object'] = new WP_Term( 1330, 'category' );
+
+$nested_template_widget = new Test_Widget( 'template', 110399 );
+Plugin::enter_template_widget_context( $nested_template_widget );
+Test_Elementor_Plugin::$instance->documents->current = new Test_Loop_Document( 110399 );
+assert_same(
+	'term_1330',
+	Plugin::normalize_archive_term_post_id( null, 77370 ),
+	'nested directly embedded Loop Item Template uses its own exact Template ID'
+);
+Plugin::leave_template_widget_context( $nested_template_widget );
+Test_Elementor_Plugin::$instance->documents->current = new Test_Loop_Document( 109458 );
+assert_same(
+	'term_1330',
+	Plugin::normalize_archive_term_post_id( null, 77370 ),
+	'leaving nested Template restores outer exact Template context'
+);
+Plugin::leave_template_widget_context( $template_widget );
+assert_same(
+	null,
+	Plugin::normalize_archive_term_post_id( null, 77370 ),
+	'Archive term context does not leak after Template rendering'
+);
+
+Plugin::enter_template_widget_context( new Test_Widget( 'template', array( 109458 ) ) );
+assert_same( null, Plugin::normalize_archive_term_post_id( null, 77370 ), 'array Template ID cannot create a context' );
+Plugin::enter_template_widget_context( new Test_Widget( 'template', new stdClass() ) );
+assert_same( null, Plugin::normalize_archive_term_post_id( null, 77370 ), 'object Template ID cannot create a context' );
+$resource_template_id = fopen( 'php://memory', 'r' );
+Plugin::enter_template_widget_context( new Test_Widget( 'template', $resource_template_id ) );
+assert_same( null, Plugin::normalize_archive_term_post_id( null, 77370 ), 'resource Template ID cannot create a context' );
+fclose( $resource_template_id );
+Plugin::enter_template_widget_context( new Test_Throwing_Name_Widget() );
+assert_same( null, Plugin::normalize_archive_term_post_id( null, 77370 ), 'throwing widget name API fails open' );
+Plugin::enter_template_widget_context( new Test_Throwing_Settings_Widget() );
+assert_same( null, Plugin::normalize_archive_term_post_id( null, 77370 ), 'throwing widget settings API fails open' );
+
+Plugin::enter_template_widget_context( $template_widget );
+Plugin::leave_template_widget_context( new Test_Throwing_Name_Widget() );
+assert_same( null, Plugin::normalize_archive_term_post_id( null, 77370 ), 'throwing after_render widget clears captured context' );
+Plugin::enter_template_widget_context( $template_widget );
+Plugin::leave_template_widget_context( new Test_Widget( 'template', 109458 ) );
+assert_same( null, Plugin::normalize_archive_term_post_id( null, 77370 ), 'mismatched Template widget identity clears captured context' );
+
+$ordinary_widget = new Test_Widget( 'heading', 109458 );
+Plugin::enter_template_widget_context( $ordinary_widget );
+assert_same(
+	null,
+	Plugin::normalize_archive_term_post_id( null, 77370 ),
+	'non-Template widget cannot create an Archive context'
+);
+Plugin::leave_template_widget_context( $ordinary_widget );
 
 $test_state['archive_type']   = '';
 $test_state['queried_object'] = null;

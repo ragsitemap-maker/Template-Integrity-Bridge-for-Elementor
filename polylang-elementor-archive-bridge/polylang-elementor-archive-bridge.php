@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Polylang Elementor Archive Bridge
  * Description: Lets one Elementor Pro archive template condition match every Polylang translation of the selected taxonomy term.
- * Version: 1.4.0
+ * Version: 1.4.4
  * Author: ragsitemap-maker
  * License: GPL-2.0-or-later
  * License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -28,17 +28,19 @@ defined( 'ABSPATH' ) || exit;
  */
 final class Plugin {
 
-	const VERSION           = '1.4.0';
+	const VERSION           = '1.4.4';
 	const MODE_EXACT        = 'exact';
 	const MODE_DIRECT_CHILD = 'direct_child';
 	const MODE_ANY_CHILD    = 'any_child';
 
-	const OPTION_CACHE_PROTECTION       = 'peab_protect_conditions_cache';
-	const OPTION_NESTED_LOOP_PROTECTION = 'peab_protect_nested_loop_conditions';
-	const SETTINGS_GROUP                = 'peab_settings';
-	const SETTINGS_PAGE                 = 'polylang-elementor-archive-bridge';
-	const SETTINGS_SECTION              = 'peab_conditions_cache';
-	const SETTINGS_SECTION_NESTED_LOOP  = 'peab_nested_loop_conditions';
+	const OPTION_CACHE_PROTECTION             = 'peab_protect_conditions_cache';
+	const OPTION_NESTED_LOOP_PROTECTION       = 'peab_protect_nested_loop_conditions';
+	const OPTION_ARCHIVE_ACF_TERM_CORRECTION  = 'peab_enable_archive_acf_term_correction';
+	const SETTINGS_GROUP                      = 'peab_settings';
+	const SETTINGS_PAGE                       = 'polylang-elementor-archive-bridge';
+	const SETTINGS_SECTION                    = 'peab_conditions_cache';
+	const SETTINGS_SECTION_NESTED_LOOP        = 'peab_nested_loop_conditions';
+	const SETTINGS_SECTION_ARCHIVE_ACF        = 'peab_archive_acf_term_correction';
 	const NESTED_LOOP_SCRIPT_HANDLE     = 'peab-nested-loop-conditions-save-protection';
 
 	/**
@@ -56,6 +58,13 @@ final class Plugin {
 	private static $translation_groups = array();
 
 	/**
+	 * Archive term contexts owned by currently rendering Template widgets.
+	 *
+	 * @var array<int, array{widget_hash: string, template_id: int, term_id: int, taxonomy: string}>
+	 */
+	private static $template_archive_contexts = array();
+
+	/**
 	 * Register runtime mapping, optional cache protection, and admin settings.
 	 *
 	 * Priority 20 allows another integration to normalize the ID first while
@@ -64,12 +73,28 @@ final class Plugin {
 	 * @return void
 	 */
 	public static function boot() {
-		add_filter(
-			'acf/pre_load_post_id',
-			array( __CLASS__, 'normalize_archive_term_post_id' ),
-			20,
-			2
-		);
+		if ( self::is_archive_acf_term_correction_enabled() ) {
+			add_action(
+				'elementor/frontend/widget/before_render',
+				array( __CLASS__, 'enter_template_widget_context' ),
+				20,
+				1
+			);
+
+			add_action(
+				'elementor/frontend/widget/after_render',
+				array( __CLASS__, 'leave_template_widget_context' ),
+				100,
+				1
+			);
+
+			add_filter(
+				'acf/pre_load_post_id',
+				array( __CLASS__, 'normalize_archive_term_post_id' ),
+				20,
+				2
+			);
+		}
 
 		add_filter(
 			'elementor/theme/get_location_templates/condition_sub_id',
@@ -104,44 +129,154 @@ final class Plugin {
 	}
 
 	/**
-	 * Preserve the queried taxonomy term identity in Elementor previews.
+	 * Capture a taxonomy Archive context for an Elementor Template widget.
 	 *
-	 * Elementor Pro may convert a WP_Term passed to ACF into a bare numeric
-	 * term ID. ACF interprets that value as a post ID, so normalize only that
-	 * exact failure shape and leave every other object ID unchanged.
+	 * Priority 20 runs after Connect Polylang Elementor translates template_id.
+	 * Only a real taxonomy Archive term creates a context frame.
+	 *
+	 * @param mixed $widget Elementor widget instance.
+	 * @return void
+	 */
+	public static function enter_template_widget_context( $widget ) {
+		if ( ! is_object( $widget ) || ! method_exists( $widget, 'get_name' ) ) {
+			return;
+		}
+
+		try {
+			if ( 'template' !== $widget->get_name() ) {
+				return;
+			}
+		} catch ( \Throwable $throwable ) {
+			return;
+		}
+
+		if (
+			! method_exists( $widget, 'get_settings' )
+			|| ( ! is_category() && ! is_tag() && ! is_tax() )
+		) {
+			return;
+		}
+
+		$queried_term = get_queried_object();
+
+		try {
+			$template_id = $widget->get_settings( 'template_id' );
+		} catch ( \Throwable $throwable ) {
+			return;
+		}
+
+		if (
+			! $queried_term instanceof \WP_Term
+			|| 0 >= (int) $queried_term->term_id
+			|| '' === (string) $queried_term->taxonomy
+			|| ! self::is_bare_positive_integer( $template_id )
+		) {
+			return;
+		}
+
+		$template_id = (int) $template_id;
+
+		self::$template_archive_contexts[] = array(
+			'widget_hash' => spl_object_hash( $widget ),
+			'template_id' => $template_id,
+			'term_id'     => (int) $queried_term->term_id,
+			'taxonomy'    => (string) $queried_term->taxonomy,
+		);
+	}
+
+	/**
+	 * End the Archive context owned by an Elementor Template widget.
+	 *
+	 * @param mixed $widget Elementor widget instance.
+	 * @return void
+	 */
+	public static function leave_template_widget_context( $widget ) {
+		if ( empty( self::$template_archive_contexts ) ) {
+			return;
+		}
+
+		if ( ! is_object( $widget ) || ! method_exists( $widget, 'get_name' ) ) {
+			self::$template_archive_contexts = array();
+			return;
+		}
+
+		try {
+			if ( 'template' !== $widget->get_name() ) {
+				return;
+			}
+		} catch ( \Throwable $throwable ) {
+			self::$template_archive_contexts = array();
+			return;
+		}
+
+		$context = array_pop( self::$template_archive_contexts );
+
+		if ( $context['widget_hash'] !== spl_object_hash( $widget ) ) {
+			self::$template_archive_contexts = array();
+		}
+	}
+
+	/**
+	 * Correct ACF identity for a Loop Item embedded as a Template widget.
+	 *
+	 * Runtime evidence showed Elementor's ACF provider treats any current
+	 * loop-item document as an active Post Loop and passes get_the_ID(). When a
+	 * Template widget directly embeds that same Loop Item document outside a
+	 * real iteration, use the captured Archive term. Real nested Loops have a
+	 * different current document ID and pass through unchanged.
+	 *
+	 * The original strict WP_Term-to-bare-ID preview correction is retained as
+	 * a separate exact branch.
 	 *
 	 * @param mixed $preload A value returned by an earlier pre-load filter.
 	 * @param mixed $post_id The original object ID passed to ACF.
 	 * @return mixed
 	 */
 	public static function normalize_archive_term_post_id( $preload, $post_id ) {
+		$has_template_context = ! empty( self::$template_archive_contexts );
+		$is_embedded_candidate = $has_template_context
+			&& null === $preload
+			&& self::is_bare_positive_integer( $post_id );
+		$is_preview_candidate = $post_id instanceof \WP_Term
+			&& self::is_bare_positive_integer( $preload );
+
+		if ( ! $is_embedded_candidate && ! $is_preview_candidate ) {
+			return $preload;
+		}
+
 		if ( ! is_category() && ! is_tag() && ! is_tax() ) {
-			return $preload;
-		}
-
-		if ( ! $post_id instanceof \WP_Term ) {
-			return $preload;
-		}
-
-		$is_bare_term_id = is_int( $preload ) && 0 < $preload;
-
-		if (
-			is_string( $preload )
-			&& '' !== $preload
-			&& 1 === preg_match( '/^[0-9]+$/D', $preload )
-			&& 0 < (int) $preload
-		) {
-			$is_bare_term_id = true;
-		}
-
-		if ( ! $is_bare_term_id ) {
 			return $preload;
 		}
 
 		$queried_term = get_queried_object();
 
+		if ( ! $queried_term instanceof \WP_Term ) {
+			return $preload;
+		}
+
+		if ( $is_embedded_candidate ) {
+			$current_post_id = get_the_ID();
+
+			if (
+				self::is_bare_positive_integer( $current_post_id )
+				&& (int) $post_id === (int) $current_post_id
+			) {
+				$context  = end( self::$template_archive_contexts );
+				$document = self::get_current_elementor_document_identity();
+
+				if (
+					(int) $queried_term->term_id === $context['term_id']
+					&& (string) $queried_term->taxonomy === $context['taxonomy']
+					&& 'loop-item' === $document['type']
+					&& $context['template_id'] === $document['id']
+				) {
+					return 'term_' . $context['term_id'];
+				}
+			}
+		}
+
 		if (
-			! $queried_term instanceof \WP_Term
+			! $is_preview_candidate
 			|| (int) $queried_term->term_id !== (int) $post_id->term_id
 			|| $queried_term->taxonomy !== $post_id->taxonomy
 			|| (int) $preload !== (int) $post_id->term_id
@@ -150,6 +285,79 @@ final class Plugin {
 		}
 
 		return 'term_' . (int) $post_id->term_id;
+	}
+
+	/**
+	 * Read the current Elementor document type and main ID without mutating it.
+	 *
+	 * @return array{type: string, id: int}
+	 */
+	private static function get_current_elementor_document_identity() {
+		$identity = array( 'type' => '', 'id' => 0 );
+
+		if ( ! class_exists( '\Elementor\Plugin', false ) ) {
+			return $identity;
+		}
+
+		try {
+			$elementor = \Elementor\Plugin::instance();
+
+			if ( ! is_object( $elementor ) || ! isset( $elementor->documents ) ) {
+				return $identity;
+			}
+
+			$documents = $elementor->documents;
+
+			if ( ! is_object( $documents ) || ! method_exists( $documents, 'get_current' ) ) {
+				return $identity;
+			}
+
+			$document = $documents->get_current();
+
+			if (
+				! is_object( $document )
+				|| ! method_exists( $document, 'get_type' )
+				|| ! method_exists( $document, 'get_main_id' )
+			) {
+				return $identity;
+			}
+
+			$document_type = $document::get_type();
+
+			if ( ! is_string( $document_type ) ) {
+				return $identity;
+			}
+
+			$document_id = $document->get_main_id();
+
+			if ( ! self::is_bare_positive_integer( $document_id ) ) {
+				return $identity;
+			}
+
+			$identity['type'] = $document_type;
+			$identity['id']   = (int) $document_id;
+		} catch ( \Throwable $throwable ) {
+			return array( 'type' => '', 'id' => 0 );
+		}
+
+		return $identity;
+	}
+
+	/**
+	 * Check an exact bare positive integer shape.
+	 *
+	 * @param mixed $value Candidate object ID.
+	 * @return bool
+	 */
+	private static function is_bare_positive_integer( $value ) {
+		if ( is_int( $value ) ) {
+			return 0 < $value;
+		}
+
+		return is_string( $value )
+			&& '' !== $value
+			&& 1 === preg_match( '/^[0-9]+$/D', $value )
+			&& 0 < (int) $value;
 	}
 
 	/**
@@ -174,6 +382,27 @@ final class Plugin {
 	 */
 	public static function is_nested_loop_conditions_protection_enabled() {
 		$value = get_option( self::OPTION_NESTED_LOOP_PROTECTION, 0 );
+
+		return 1 === $value || '1' === $value;
+	}
+
+	/**
+	 * Determine whether Archive ACF term correction is enabled.
+	 *
+	 * A unique sentinel distinguishes a missing option from malformed stored
+	 * data. Provision the default once as an autoloaded option so an upgraded
+	 * site does not query a permanently missing option on every request.
+	 *
+	 * @return bool
+	 */
+	public static function is_archive_acf_term_correction_enabled() {
+		$missing = new \stdClass();
+		$value   = get_option( self::OPTION_ARCHIVE_ACF_TERM_CORRECTION, $missing );
+
+		if ( $missing === $value ) {
+			add_option( self::OPTION_ARCHIVE_ACF_TERM_CORRECTION, 1, '', true );
+			return true;
+		}
 
 		return 1 === $value || '1' === $value;
 	}
@@ -244,6 +473,16 @@ final class Plugin {
 	}
 
 	/**
+	 * Normalize the Archive ACF correction checkbox value.
+	 *
+	 * @param mixed $value Submitted option value.
+	 * @return int
+	 */
+	public static function sanitize_archive_acf_term_correction_option( $value ) {
+		return in_array( $value, array( 1, '1', true ), true ) ? 1 : 0;
+	}
+
+	/**
 	 * Register the optional feature setting.
 	 *
 	 * @return void
@@ -267,6 +506,17 @@ final class Plugin {
 				'type'              => 'integer',
 				'sanitize_callback' => array( __CLASS__, 'sanitize_nested_loop_protection_option' ),
 				'default'           => 0,
+				'show_in_rest'      => false,
+			)
+		);
+
+		register_setting(
+			self::SETTINGS_GROUP,
+			self::OPTION_ARCHIVE_ACF_TERM_CORRECTION,
+			array(
+				'type'              => 'integer',
+				'sanitize_callback' => array( __CLASS__, 'sanitize_archive_acf_term_correction_option' ),
+				'default'           => 1,
 				'show_in_rest'      => false,
 			)
 		);
@@ -299,6 +549,21 @@ final class Plugin {
 			array( __CLASS__, 'render_nested_loop_protection_field' ),
 			self::SETTINGS_PAGE,
 			self::SETTINGS_SECTION_NESTED_LOOP
+		);
+
+		add_settings_section(
+			self::SETTINGS_SECTION_ARCHIVE_ACF,
+			esc_html__( 'Archive Template ACF Term Correction', 'polylang-elementor-archive-bridge' ),
+			array( __CLASS__, 'render_archive_acf_term_correction_section' ),
+			self::SETTINGS_PAGE
+		);
+
+		add_settings_field(
+			self::OPTION_ARCHIVE_ACF_TERM_CORRECTION,
+			esc_html__( 'Archive ACF term correction', 'polylang-elementor-archive-bridge' ),
+			array( __CLASS__, 'render_archive_acf_term_correction_field' ),
+			self::SETTINGS_PAGE,
+			self::SETTINGS_SECTION_ARCHIVE_ACF
 		);
 	}
 
@@ -435,6 +700,57 @@ final class Plugin {
 			<?php
 			echo esc_html__(
 				'Disabled by default. The guard runs only in the Elementor editor and only while the current document is a Loop Item. Conditions already deleted before enabling this setting must be recreated once.',
+				'polylang-elementor-archive-bridge'
+			);
+			?>
+		</p>
+		<?php
+	}
+
+	/**
+	 * Explain the directly embedded Loop Item ACF correction.
+	 *
+	 * @return void
+	 */
+	public static function render_archive_acf_term_correction_section() {
+		echo '<p>' . esc_html__(
+			'Use this when a Template widget directly embeds a Loop Item Template on a taxonomy Archive and ACF otherwise reads the current post instead of the queried term.',
+			'polylang-elementor-archive-bridge'
+		) . '</p>';
+	}
+
+	/**
+	 * Render the enabled-by-default Archive ACF correction checkbox.
+	 *
+	 * @return void
+	 */
+	public static function render_archive_acf_term_correction_field() {
+		$enabled = self::is_archive_acf_term_correction_enabled();
+		?>
+		<input
+			type="hidden"
+			name="<?php echo esc_attr( self::OPTION_ARCHIVE_ACF_TERM_CORRECTION ); ?>"
+			value="0"
+		/>
+		<label for="<?php echo esc_attr( self::OPTION_ARCHIVE_ACF_TERM_CORRECTION ); ?>">
+			<input
+				type="checkbox"
+				id="<?php echo esc_attr( self::OPTION_ARCHIVE_ACF_TERM_CORRECTION ); ?>"
+				name="<?php echo esc_attr( self::OPTION_ARCHIVE_ACF_TERM_CORRECTION ); ?>"
+				value="1"
+				<?php checked( $enabled ); ?>
+			/>
+			<?php
+			echo esc_html__(
+				'Use the queried taxonomy term for ACF fields in directly embedded Loop Item Templates.',
+				'polylang-elementor-archive-bridge'
+			);
+			?>
+		</label>
+		<p class="description">
+			<?php
+			echo esc_html__(
+				'Enabled by default. Disable it if this site does not use this Archive structure or if you need to stop the compatibility correction. If Elementor Pro already supplies the correct value, the correction remains checked but silently does nothing.',
 				'polylang-elementor-archive-bridge'
 			);
 			?>

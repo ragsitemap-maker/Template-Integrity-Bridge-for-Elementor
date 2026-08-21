@@ -3,159 +3,227 @@ Contributors: site-development-team
 Tags: elementor, polylang, archive, theme builder, display conditions
 Requires at least: 6.5
 Requires PHP: 7.4
-Stable tag: 1.4.0
+Stable tag: 1.4.4
 License: GPL-2.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
-Use one Elementor Pro Archive Template taxonomy condition for all term
-translations explicitly linked by Polylang.
+Use one Elementor Pro Archive taxonomy condition across Polylang translations,
+and apply narrowly scoped fixes for Archive ACF and two editor/cache symptoms.
 
 == Description ==
 
-This independent compatibility bridge is useful when several languages share
-one archive design. Elementor Pro and Polylang are required. It does not
-translate Elementor templates, add widgets, alter frontend queries, duplicate
-Display Conditions, or write Elementor metadata.
+Polylang Elementor Archive Bridge is an independent compatibility plugin for
+Elementor Pro, Polylang, and taxonomy Archives. It does not translate Templates,
+add widgets, alter frontend queries, duplicate Display Conditions, or write
+Elementor metadata.
 
-When Elementor evaluates a taxonomy archive condition, the plugin:
+= Choose the feature by the symptom =
 
-1. Reads the term ID saved in the Elementor Display Condition.
-2. Builds the candidate term set required by Elementor's Exact, Direct Child,
-   or Any Child condition.
-3. Gets candidate Polylang translation groups with
-   pll_get_term_translations().
-4. Gives Elementor the matching current term, parent, or ancestor ID and lets
-   Elementor perform its normal condition check.
+1. One taxonomy Display Condition does not match linked Polylang translations:
+   the core taxonomy condition mapping is always active.
+2. ACF inside a Loop Item Template directly embedded by a Template widget reads
+   the current post or the ACF default instead of the Archive term: Archive ACF
+   term correction is enabled by default.
+3. Saving Theme Builder conditions makes Templates from another Polylang admin
+   language disappear from condition results: Conditions Cache Protection is
+   available and disabled by default.
+4. Edit Loop Template followed by Save & Back removes the outer Template's
+   Display Conditions: Nested Loop Conditions Save Protection is available and
+   disabled by default.
 
-The taxonomy mapping uses one frontend filter. Translation groups are cached in
-memory for the current request.
+These are separate problems. Each setting controls only its own hooks and does
+not enable or rewrite another feature.
 
-An optional, disabled-by-default Conditions Cache Protection setting adds
-`lang=''` only to Elementor's dedicated Theme Builder conditions cache rebuild
-query. Use this workaround only for the documented incomplete-cache symptom; it
-is not a claim of a confirmed upstream bug.
+= Shared Archive conditions across Polylang translations =
 
-An independent, disabled-by-default Nested Loop Conditions Save Protection
-setting prevents a Loop Item opened through a Loop Grid inside another Template
-from queueing an empty Theme Builder Conditions request during Save & Back. It
-does not block the Loop Item content save.
+Elementor stores a taxonomy Display Condition with one term ID, while Polylang
+stores every translation as a different term ID. During an Archive request, the
+plugin checks whether the saved term and the current term, parent, or ancestor
+belong to the same explicit Polylang translation group. It supplies the matching
+ID and leaves Elementor's native Include or Exclude decision unchanged.
 
-Elementor Pro can turn a queried `WP_Term` into a bare numeric ID while ACF
-loads values in a Theme Builder preview. ACF then treats the number as a post
-ID and falls back to the field default. This plugin corrects only that exact
-current-archive-term identity to `term_{ID}`. Correct object IDs, Loop items,
-Options, Users, Comments, and future fixed Elementor output pass through.
+Supported condition modes are Exact, Direct Child, Any Child or descendant,
+Include, and Exclude. Categories, tags, and public custom taxonomies managed by
+both Elementor and Polylang are supported. Translation groups and hierarchy
+candidates are cached only for the current request.
+
+= ACF in a directly embedded Loop Item Template =
+
+The correction targets only this structure:
+
+    Theme Builder taxonomy Archive
+    └─ Elementor Template widget
+       └─ directly selected Loop Item Template
+          └─ ACF Dynamic Tag should read the queried taxonomy term
+
+Elementor can identify that directly loaded document as `loop-item` even though
+no post Loop iteration is running. Its ACF provider then uses `get_the_ID()`, so
+ACF looks at the current post instead of the queried Archive term and may show
+the field's default value.
+
+When Archive ACF term correction is enabled, the plugin changes the ACF identity
+only when all confirmed runtime conditions match. The upstream preload must be
+unresolved, and the Template widget's selected Template ID must exactly equal
+the current Loop Item document ID. Only then does it supply `term_{ID}` for the
+queried taxonomy term.
+
+It does not change a normal Loop Grid, Taxonomy Loop, a different Loop Item
+document, Options, User, Comment, post, page, non-taxonomy Archive, or non-
+Template-widget ACF lookup. ACF values must be stored on the taxonomy term; the
+plugin does not map WordPress Page meta to a term.
+
+= Compatibility with a future Elementor Pro fix =
+
+The plugin does not use an Elementor version list. If Elementor Pro or ACF
+already returns a non-null value, stops using the current post ID, changes the
+document type or API, or no longer produces an exact Template/document ID
+match, the original upstream value is returned unchanged.
+
+Unexpected API types and exceptions also fail open without warnings, notices,
+logs, or automatic setting changes. The checkbox may remain enabled while the
+correction silently becomes a no-op.
+
+= Optional protections =
+
+Conditions Cache Protection adds `lang=''` only to Elementor's dedicated Theme
+Builder conditions-cache rebuild query. Enable it only when saving one Template
+causes Templates from other Polylang admin languages to disappear. Re-save a
+Display Condition once after enabling it to rebuild an already incomplete
+cache.
+
+Nested Loop Conditions Save Protection prevents an invalid empty Loop
+Conditions request from entering Elementor's delayed AJAX queue during Edit
+Loop Template followed by Save & Back. It does not block the Loop Item content
+save or legitimate changes to the outer Template. Conditions deleted before
+the guard was enabled must be recreated once.
 
 == Installation ==
 
-1. Upload the `polylang-elementor-archive-bridge` folder to
-   `/wp-content/plugins/`, or install the ZIP in Plugins > Add New > Upload Plugin.
-2. Activate Polylang, Elementor Pro, and this plugin.
-3. Create one Elementor Archive Template.
-4. Add a Display Condition for the taxonomy term in the main language.
-5. Do not add separate conditions for translations of the same term.
-6. Optional: open Settings > Archive Bridge and enable Conditions Cache
-   Protection if saving one Theme Builder template causes other templates to
-   disappear from Elementor's conditions cache.
-7. Optional: enable Nested Loop Conditions Save Protection if editing a Loop
-   Item from inside another Template causes the outer Template's Display
-   Conditions to disappear after Save & Back.
-8. When a Saved Template inside a taxonomy Archive uses an ACF Dynamic Tag,
-   store the value on the taxonomy term. The term identity correction is
-   automatic and has no setting.
+1. Upload the release ZIP in Plugins > Add New > Upload Plugin and activate it.
+2. Confirm that Elementor Pro and Polylang are active.
+3. Open Settings > Archive Bridge.
+4. Keep Archive ACF term correction enabled when using the exact Archive >
+   Template widget > Loop Item Template structure described above. Disable it
+   when that structure is not used or the correction must be stopped.
+5. Enable either optional protection only when its matching symptom is present.
+6. Assign languages to taxonomy terms and explicitly link their translations in
+   Polylang.
+7. Create one Elementor Pro Archive Template and save one taxonomy Display
+   Condition using the term in the primary language.
+8. Do not add duplicate conditions for linked translations in the same group.
+9. Publish and test every translated taxonomy Archive.
 
 Example:
 
     Include > Categories > Product (English term ID 10)
 
 If Polylang links term 10 to Chinese term 20, German term 30, and Japanese term
-40, the same Elementor template is selected on all four category archives.
+40, the same Archive Template condition can match all four category Archives.
+
+== Frequently Asked Questions ==
+
+= Is the core Polylang condition mapping configurable? =
+
+No. It is the plugin's primary function and is always active. The three settings
+on Settings > Archive Bridge control only the Archive ACF correction and the two
+independent protections.
+
+= Is Archive ACF term correction for Loop Grid? =
+
+No. A normal Loop Grid iteration keeps its own post identity and is returned
+unchanged. This correction is only for a Template widget that directly selects
+a Loop Item Template on a taxonomy Archive, outside a real Loop iteration.
+
+= Why does the ACF field show its default value? =
+
+In the confirmed direct-embed structure, Elementor can give ACF the current post
+ID instead of the queried taxonomy term. ACF therefore cannot find the term's
+stored value and may fall back to the field default. Store the value on the term
+and keep Archive ACF term correction enabled for that structure.
+
+= Will this conflict after Elementor Pro fixes the problem? =
+
+The correction only runs when the exact failure signature still exists. Correct
+non-null upstream output, changed document identity, missing APIs, unexpected
+types, and exceptions all pass through silently. It does not disable the
+checkbox or overwrite data.
+
+= Is Conditions Cache Protection enabled automatically? =
+
+No. Enable it only when saving Theme Builder conditions causes Templates from
+other Polylang admin languages to disappear. It is independent of taxonomy
+matching and Archive ACF correction.
+
+= Is Nested Loop Conditions Save Protection enabled automatically? =
+
+No. Enable it only when Edit Loop Template followed by Save & Back removes the
+outer Template's Display Conditions. It does not block Loop content saves.
+
+= Does the plugin copy or repair Elementor conditions? =
+
+No. `_elementor_conditions` remains unchanged. The plugin does not infer or
+restore conditions that were already deleted.
 
 == Scope ==
 
 Supported:
 
-* Categories
-* Tags
-* Public custom taxonomies handled by both Elementor and Polylang
-* Exact taxonomy term conditions
-* Direct Child taxonomy term conditions
-* Any Child taxonomy term conditions
+* Linked Polylang taxonomy translations
+* Exact, Direct Child, and Any Child taxonomy conditions
 * Include and Exclude conditions
-* One unchanged Elementor Template ID across languages
-* Optional all-language Elementor conditions cache regeneration
+* Categories, tags, and supported public custom taxonomies
+* Enabled-by-default Archive ACF term correction for the exact direct-embed path
+* Optional all-language conditions-cache regeneration
 * Optional nested Loop Item conditions-save race protection
-* ACF term identity correction for taxonomy Archive previews
 
 Not included:
 
-* Elementor template translation
-* Language-switcher widgets or dynamic tags
-* Page, post, author, date, search, or other non-taxonomy conditions
-* Automatic repair of missing or incorrectly linked Polylang term translations
-* Changes to term content, URLs, slugs, hierarchy, or language relationships
-* A migration layer or activation-time automatic repair
-* Mapping WordPress Page post meta to taxonomy term meta
+* Elementor Template translation, duplication, or synchronization
+* Language-switcher widgets or Dynamic Tags
+* Page, post, author, date, search, or other non-taxonomy condition mapping
+* Mapping WordPress Page ACF data to taxonomy term data
+* Changes to term content, URLs, slugs, hierarchy, language relationships, or
+  WordPress queries
+* Activation migrations, background jobs, diagnostics, or automatic data repair
 
 Limitations:
 
 * Elementor Pro and Polylang are required.
+* Advanced Custom Fields is required only for Archive ACF term correction.
 * Only terms explicitly linked by Polylang can match.
-* Separate templates for the same translation group can overlap.
-* The bridge depends on Elementor Pro filter hooks that may change in a future release.
-* Nested Loop protection depends on Elementor's current `loop-item` document type
-  and `theme_builder_save_conditions` editor action names.
-* The ACF correction applies only when the original object and queried object
-  are the same `WP_Term` and an earlier filter returns the same bare numeric ID.
-  Correct upstream output is returned unchanged.
-
-== Frequently Asked Questions ==
-
-= Does this copy conditions into Elementor metadata? =
-
-No. The saved `_elementor_conditions` value remains unchanged. Mapping happens
-only while Elementor evaluates the current request.
-
-= Must term slugs and hierarchy be identical? =
-
-No. The bridge uses Polylang's explicit translation relationship. Matching
-hierarchy is still recommended for site structure, but it is not the matching
-key.
-
-= Can I also create separate language-specific templates? =
-
-Not for the same translated term group unless their conditions are deliberately
-made mutually exclusive. Otherwise multiple templates can match at the same
-priority. This plugin is intended for one shared template.
-
-= What happens if a term translation is missing? =
-
-Only linked terms match. Unrelated or missing translations do not inherit the
-condition.
-
-= Is Conditions Cache Protection enabled automatically? =
-
-No. It is disabled by default. Enable it explicitly in Settings > Archive
-Bridge only if saving one Theme Builder template's Display Conditions causes
-other templates' conditions to disappear or become incomplete. After enabling
-it, re-save any Theme Builder Display Conditions once to rebuild the cache.
-
-= Is Nested Loop Conditions Save Protection enabled automatically? =
-
-No. It is disabled by default. Enable it only if Edit Loop Template followed by
-Save & Back causes the outer Template's Display Conditions to disappear. The
-guard runs only in the Elementor editor and does not block Loop content saves.
-Conditions already deleted before enabling it must be recreated once.
-
-= Does the ACF Archive term correction need to be enabled? =
-
-No. It has no setting and runs only when every strict condition matches the
-confirmed `WP_Term` to bare-number failure. If Elementor Pro returns `null`, a
-`WP_Term`, `term_{ID}`, or another valid object ID, the plugin returns it
-unchanged. ACF values must be stored on the taxonomy term, not on a separate
-WordPress Page.
+* Separate Templates for the same translation group can overlap unless their
+  conditions are mutually exclusive.
+* Conditions Cache Protection is a symptom-specific workaround, not a claim of
+  a confirmed upstream bug.
+* Nested Loop protection depends on Elementor's current editor action names and
+  fails open for unknown future APIs.
 
 == Changelog ==
+
+= 1.4.4 =
+
+* Add an enabled-by-default, independent Archive ACF term correction setting.
+* Shorten non-candidate ACF paths without changing the confirmed matcher.
+* Fail open silently for correct upstream values and unknown Elementor APIs.
+* Reorganize documentation around the four distinct problems and settings.
+
+= 1.4.3 =
+
+* Target the runtime-confirmed directly embedded Loop Item ACF path.
+* Require an exact selected-Template/current-document ID match.
+* Preserve real nested Loops and all correct upstream output.
+
+= 1.4.2 =
+
+* Attempt to handle a frontend null-preload Saved Template ACF path.
+* Keep the preview bare-ID correction and preserve unrelated contexts.
+* Later runtime evidence showed this path was still incomplete.
+
+= 1.4.1 =
+
+* Attempt to capture the Archive term through a Saved Template preview query.
+* Preserve Loop and non-Template contexts and pass through corrected output.
+* Later runtime evidence disproved that preview-query hook as the frontend cause.
 
 = 1.4.0 =
 
